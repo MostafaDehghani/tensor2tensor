@@ -212,6 +212,38 @@ def universal_transformer_layer(x,
     ValueError: Unknown recurrence type
   """
 
+  if hparams.multi_universal_transformer:
+    return singl_universal_transformer_layer(
+        x,hparams,ffn_unit,attention_unit,pad_remover)
+
+  else:
+    return multi_universal_transformer_layer(
+        x,hparams,ffn_unit,attention_unit,pad_remover)
+
+
+
+
+def singl_universal_transformer_layer(x,
+                                hparams,
+                                ffn_unit,
+                                attention_unit,
+                                pad_remover=None):
+  """A single universal transformer layer.
+
+  Args:
+    x: input
+    hparams: model hyper-parameters
+    ffn_unit: feed-forward unit
+    attention_unit: multi-head attention unit
+    pad_remover: to mask out padding in convolutional layers (efficiency).
+
+  Returns:
+    the output tensor,  extra output (can be memory, ponder time, etc.)
+
+  Raises:
+    ValueError: Unknown recurrence type
+  """
+
   def add_vanilla_transformer_layer(x, num_layers, name):
     """Passes the input through num_layers of vanilla transformer layers.
 
@@ -263,6 +295,115 @@ def universal_transformer_layer(x,
                                              "after_ut_")
 
     return output, extra_output
+
+
+def multi_universal_transformer_layer(x,
+                                hparams,
+                                ffn_unit,
+                                attention_unit,
+                                pad_remover=None):
+  """A multi universal transformer layer.
+
+  Args:
+    x: input
+    hparams: model hyper-parameters
+    ffn_unit: feed-forward unit
+    attention_unit: multi-head attention unit
+    pad_remover: to mask out padding in convolutional layers (efficiency).
+
+  Returns:
+    the output tensor,  extra output (can be memory, ponder time, etc.)
+
+  Raises:
+    ValueError: Unknown recurrence type
+  """
+  def aggrigate_uts_extra_outputs(extra_outputs):
+    return sum(extra_outputs)
+
+  with tf.variable_scope(
+      "multi_universal_transformer_%s" % hparams.multi_ut_stack_type):
+
+    extra_outputs = []
+    for ut in range(hparams.num_universal_transformers):
+      with tf.variable_scope("universal_transformer_%d" % ut):
+        x, extra_output = get_multi_ut_layer(
+          x, hparams, ffn_unit, attention_unit, pad_remover)
+        extra_outputs.append(extra_output)
+
+    return x, aggrigate_uts_extra_outputs(extra_outputs)
+
+
+def get_multi_ut_layer(x,
+                 hparams,
+                 ffn_unit,
+                 attention_unit,
+                 pad_remover=None):
+  """Provides a UT as one layer of a multi universal transforemr.
+
+  Args:
+    x: input
+    hparams: model hyper-parameters
+    ffn_unit: feed-forward unit
+    attention_unit: multi-head attention unit
+    pad_remover: to mask out padding in convolutional layers (efficiency).
+
+  Returns:
+    output of the ut, extra output of the ut
+
+  Raises:
+    ValueError: Unknown recurrence type
+  """
+
+  if hparams.multi_ut_stack_type == "basic":
+    x, extra_output = singl_universal_transformer_layer(
+      x, hparams, ffn_unit, attention_unit, pad_remover)
+
+  elif hparams.multi_ut_stack_type == "highway":
+    original_x = x
+    gate_inputs = [x]
+
+    x, extra_output = singl_universal_transformer_layer(
+      x, hparams, ffn_unit, attention_unit, pad_remover)
+
+    transform_gate = _ffn_layer_multi_inputs(
+      gate_inputs,
+      hparams,
+      ffn_layer_type=hparams.gate_ffn_layer,
+      name="transform",
+      bias_initializer=tf.constant_initializer(hparams.transform_bias_init),
+      activation=tf.sigmoid,
+      pad_remover=pad_remover,
+      preprocess=True,
+      postprocess=True)
+
+    if hparams.couple_carry_transform_gates:
+      carry_gate = tf.subtract(1.0, transform_gate, name="carry")
+
+    else:
+      carry_gate = _ffn_layer_multi_inputs(
+        gate_inputs,
+        hparams,
+        ffn_layer_type= hparams.gate_ffn_layer,
+        name="carry",
+        bias_initializer=tf.constant_initializer(-hparams.transform_bias_init),
+        activation=tf.sigmoid,
+        pad_remover=pad_remover,
+        preprocess=True,
+        postprocess=True)
+
+    x = original_x * carry_gate + x * transform_gate
+
+    tf.contrib.summary.scalar("highway_transform_gate_layer",
+                              tf.reduce_mean(transform_gate))
+
+    tf.contrib.summary.scalar("highway_carry_gate_layer",
+                              tf.reduce_mean(carry_gate))
+
+  else:
+    raise ValueError(
+      "Unknown multi-ut stack type: %s" % hparams.multi_ut_stack_type)
+
+  return x, extra_output
 
 
 def get_ut_layer(x,
@@ -811,7 +952,7 @@ def universal_transformer_depthwise_attention(layer_inputs,
           states_so_far, (hparams.hidden_size if hparams.dwa_elements else 1),
           activation=None,
           use_bias=True),
-      axis=-1)
+          axis=-1)
 
   # prepare the state tensor that will be transformed
   state_to_be_transformed = tf.reduce_sum(

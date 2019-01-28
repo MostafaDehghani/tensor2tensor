@@ -362,6 +362,17 @@ def update_hparams_for_universal_transformer(hparams):
   """
   hparams.daisy_chain_variables = False  # Breaks multi-gpu in while loops.
 
+  # Stack of UT's (with different parameters)
+  hparams.add_hparam("multi_universal_transformer", False)
+
+  # Number of stacked UTs in  multi_universal_transformer.
+  hparams.add_hparam("num_universal_transformers", 6)
+
+  # Type of the stack of  UTs in  multi_universal_transformer:
+  # basic, highway,
+  hparams.add_hparam("multi_ut_stack_type", "basic")
+
+
   # If not None, mixes vanilla transformer with Universal Transformer.
   # Options: None, "before_ut", and "after_ut".
   hparams.add_hparam("mix_with_transformer", None)
@@ -761,6 +772,25 @@ def universal_transformer_sepconv_base():
   hparams.transformer_ffn_type = "sepconv"
   return hparams
 
+
+@registry.register_hparams
+def multi_universal_transformer_small():
+  hparams = transformer.transformer_base()
+  hparams = update_hparams_for_universal_transformer(hparams)
+  hparams.multi_universal_transformer = True
+  hparams.recurrence_type = "basic"
+  hparams.recurrence_type = "basic"
+  return hparams
+
+
+@registry.register_hparams
+def multi_universal_transformer_small():
+  hparams = transformer.transformer_base()
+  hparams = update_hparams_for_universal_transformer(hparams)
+  hparams.multi_universal_transformer = True
+  hparams.recurrence_type = "basic"
+  hparams.multi_ut_stack_type = "basic"
+  return hparams
 
 @registry.register_ranged_hparams
 def universal_transformer_base_range(rhp):
