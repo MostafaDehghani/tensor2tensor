@@ -779,16 +779,6 @@ def multi_universal_transformer_small():
   hparams = update_hparams_for_universal_transformer(hparams)
   hparams.multi_universal_transformer = True
   hparams.recurrence_type = "basic"
-  hparams.recurrence_type = "basic"
-  return hparams
-
-
-@registry.register_hparams
-def multi_universal_transformer_small():
-  hparams = transformer.transformer_base()
-  hparams = update_hparams_for_universal_transformer(hparams)
-  hparams.multi_universal_transformer = True
-  hparams.recurrence_type = "basic"
   hparams.multi_ut_stack_type = "basic"
   return hparams
 
