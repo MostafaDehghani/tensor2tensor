@@ -213,11 +213,13 @@ def universal_transformer_layer(x,
   """
 
   if hparams.multi_universal_transformer:
-    return singl_universal_transformer_layer(
+    print("we are going to have a  multi universal transformer")
+    return multi_universal_transformer_layer(
         x,hparams,ffn_unit,attention_unit,pad_remover)
 
   else:
-    return multi_universal_transformer_layer(
+    print("we are going to have a single universal transformer")
+    return singl_universal_transformer_layer(
         x,hparams,ffn_unit,attention_unit,pad_remover)
 
 
@@ -317,20 +319,23 @@ def multi_universal_transformer_layer(x,
   Raises:
     ValueError: Unknown recurrence type
   """
+
   def aggrigate_uts_extra_outputs(extra_outputs):
     return sum(extra_outputs)
 
   with tf.variable_scope(
       "multi_universal_transformer_%s" % hparams.multi_ut_stack_type):
-
     extra_outputs = []
-    for ut in range(hparams.num_universal_transformers):
+    print("we are: hparams.num_of_universal_transformers = %d" %hparams.num_of_universal_transformers)
+    # for ut in range(hparams.num_of_universal_transformers):
+    for ut in range(6):
+      print("we are in the %d loop" %ut)
       with tf.variable_scope("universal_transformer_%d" % ut):
         x, extra_output = get_multi_ut_layer(
           x, hparams, ffn_unit, attention_unit, pad_remover)
         extra_outputs.append(extra_output)
 
-    return x, aggrigate_uts_extra_outputs(extra_outputs)
+  return x, aggrigate_uts_extra_outputs(extra_outputs)
 
 
 def get_multi_ut_layer(x,
@@ -353,6 +358,8 @@ def get_multi_ut_layer(x,
   Raises:
     ValueError: Unknown recurrence type
   """
+
+  # print("we are in get_multi_ut_layer")
 
   if hparams.multi_ut_stack_type == "basic":
     x, extra_output = singl_universal_transformer_layer(

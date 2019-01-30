@@ -366,10 +366,10 @@ def update_hparams_for_universal_transformer(hparams):
   hparams.add_hparam("multi_universal_transformer", False)
 
   # Number of stacked UTs in  multi_universal_transformer.
-  hparams.add_hparam("num_universal_transformers", 6)
+  hparams.add_hparam("num_of_universal_transformers", 1)
 
   # Type of the stack of  UTs in  multi_universal_transformer:
-  # basic, highway,
+  # basic, highway
   hparams.add_hparam("multi_ut_stack_type", "basic")
 
 
@@ -773,14 +773,16 @@ def universal_transformer_sepconv_base():
   return hparams
 
 
+
 @registry.register_hparams
-def multi_universal_transformer_small():
+def stacked_universal_transformer_base():
   hparams = transformer.transformer_base()
   hparams = update_hparams_for_universal_transformer(hparams)
   hparams.multi_universal_transformer = True
-  hparams.recurrence_type = "basic"
+  hparams.num_of_universal_transformers = 6
   hparams.multi_ut_stack_type = "basic"
   return hparams
+
 
 @registry.register_ranged_hparams
 def universal_transformer_base_range(rhp):
