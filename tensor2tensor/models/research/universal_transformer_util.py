@@ -326,9 +326,9 @@ def multi_universal_transformer_layer(x,
   with tf.variable_scope(
       "multi_universal_transformer_%s" % hparams.multi_ut_stack_type):
     extra_outputs = []
-    print("we are: hparams.num_of_universal_transformers = %d" %hparams.num_of_universal_transformers)
-    # for ut in range(hparams.num_of_universal_transformers):
-    for ut in range(6):
+    tf.logging.info("we are: hparams.num_universal_transformers = %d" %hparams.num_universal_transformers)
+    for ut in range(hparams.num_universal_transformers):
+    # for ut in range(6):
       print("we are in the %d loop" %ut)
       with tf.variable_scope("universal_transformer_%d" % ut):
         x, extra_output = get_multi_ut_layer(
@@ -366,6 +366,7 @@ def get_multi_ut_layer(x,
       x, hparams, ffn_unit, attention_unit, pad_remover)
 
   elif hparams.multi_ut_stack_type == "highway":
+    print("we are going to go to highway mut")
     original_x = x
     gate_inputs = [x]
 
@@ -400,11 +401,17 @@ def get_multi_ut_layer(x,
 
     x = original_x * carry_gate + x * transform_gate
 
-    tf.contrib.summary.scalar("highway_transform_gate_layer",
+    tf.contrib.summary.histogram("mut_highway_mean_transform_gate_layer",
                               tf.reduce_mean(transform_gate))
 
-    tf.contrib.summary.scalar("highway_carry_gate_layer",
+    tf.contrib.summary.histogram("mut_highway_mean_carry_gate_layer",
                               tf.reduce_mean(carry_gate))
+
+    tf.contrib.summary.histogram("mut_highway_transform_gate_layer",
+                                 transform_gate)
+
+    tf.contrib.summary.histogram("mut_highway_carry_gate_layer",
+                                 carry_gate)
 
   else:
     raise ValueError(
