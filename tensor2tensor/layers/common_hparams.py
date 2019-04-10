@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The Tensor2Tensor Authors.
+# Copyright 2019 The Tensor2Tensor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ from __future__ import division
 from __future__ import print_function
 from six.moves import zip  # pylint: disable=redefined-builtin
 from tensor2tensor.utils import registry
+from tensor2tensor.utils.hparam import HParams
 
 import tensorflow as tf
 
@@ -27,7 +28,7 @@ import tensorflow as tf
 @registry.register_hparams("basic_1")
 def basic_params1():
   """A set of basic hyperparameters."""
-  return tf.contrib.training.HParams(
+  return HParams(
       # If the problem consists of variable-length sequences
       # (see problem.batch_size_means_tokens()), then this is the number
       # of tokens per batch per GPU or per TPU core.  Otherwise, this is
@@ -55,7 +56,7 @@ def basic_params1():
       initializer="orthogonal",
       initializer_gain=1.5,
       label_smoothing=0.1,
-      optimizer="Adam",
+      optimizer="adam",
       optimizer_adam_epsilon=1e-6,
       optimizer_adam_beta1=0.85,
       optimizer_adam_beta2=0.997,
@@ -75,6 +76,8 @@ def basic_params1():
       # Mixed precision training only supports exponential scaling currently
       # To disable the scaler, see to 0/False
       mixed_precision_optimizer_loss_scaler="exponential",
+      # Determines the initial loss scaling value for mixed precision
+      mixed_precision_optimizer_init_loss_scale=2**15,
       # Whether to zero gradients that were not computed, so that the
       # appropriate slots are created. Useful for sharing checkpoints between
       # models with different sets of heads.
@@ -102,6 +105,7 @@ def basic_params1():
       learning_rate=0.1,
       sampling_method="argmax",  # "argmax" or "random"
       sampling_temp=1.0,  # temperature for sampling
+      sampling_keep_top_k=-1,  # If >0, ignore all but the top k logits
       # expand the logits a piece at a time - saves memory.
       factored_logits=False,
       multiply_embedding_mode="sqrt_depth",
@@ -138,7 +142,6 @@ def basic_params1():
       norm_type="layer",  # "batch", layer", "noam", "none".
       # epsilon parameter to normalization function
       norm_epsilon=1e-6,
-      symbol_modality_num_shards=1,
       # pad vocabularies so that this value divides the vocabulary size.
       vocab_divisor=1,
       # During training, we drop sequences whose inputs and targets are shorter
@@ -148,6 +151,14 @@ def basic_params1():
       # than max_length.
       # If max_length==0, we use hparams.batch_size instead.
       max_length=0,
+      # Pack examples on the fly.
+      pack_dataset=False,
+      # Use custom ops not included in standard tensorflow.
+      use_custom_ops=True,
+      # Split targets on the first axis into chunks of this length.
+      split_targets_chunk_length=0,
+      split_targets_max_chunks=100,
+      split_targets_strided_training=False,
       # Maximum length in the smallest length bucket.  Setting this
       # flag too high will result in wasteful padding of short
       # sequences.  Due to some (hopefully) temporary hacks in the
@@ -166,22 +177,26 @@ def basic_params1():
       # If True, run the model autoregressively instead of teacher-forcing
       # during eval
       eval_run_autoregressive=False,
-      # TODO(lukaszkaiser): these parameters should probably be set elsewhere.
-      # (SymbolModality) - If this flag is on, we try to share all of the input
-      # embeddings, the target embeddings and the softmax weights.
+      # (For features with symbol modality) If True, share all of the
+      # input embeddings, target embeddings, and softmax weights.
       shared_embedding_and_softmax_weights=False,
-      # (SymbolModality) - If this flag is on, we try to share the input
-      # embeddings and the target embeddings.
-      # You can also share the input embeddings with the target embeddings
-      # by using a problem_hparams that uses the same modality object for
-      # the input modality and target modality.
+      # (For features with symbol modality) If True, share the input embeddings
+      # and target embeddings.
       shared_embedding=False,
-      # In SymbolModality, skip the top layer, assume we're providing logits.
-      symbol_modality_skip_top=False,
-      # Modalities used to map from features to a space compatible with
-      # chosen model architecture. It comprises key-value pairs of a feature
-      # name (str) and its modality class.
-      modality={},
+      # (For features with symbol modality) Number to shard embeddings by.
+      symbol_modality_num_shards=1,
+      # Feature transformations are optional dictionaries comprising key-value
+      # pairs of a feature name (str) and its transformation (function). If not
+      # specified, T2TModel applies a default transformation according to the
+      # feature's modality. Bottom is applicable to all features; loss, top, and
+      # weights_fn are only applicable to target features.
+      # TODO(trandustin): `name` is an optional hparam for legacy reasons,
+      # defining variable scope names. Remove this hparam in the future.
+      bottom={},
+      loss={},
+      name={},
+      top={},
+      weights_fn={},
       # The maximum length of "input" sequence.
       # Sequences longer than this value will be truncated. 0 or negative values
       # mean there is no maximum or truncation.
@@ -466,7 +481,7 @@ def basic_range1(ranged_hparams):
   rhp.set_float("optimizer_adam_beta2", 0.995, 0.999)
   rhp.set_categorical(
       "optimizer",
-      ["Adam", "Adagrad", "Momentum", "RMSProp", "SGD", "YellowFin"])
+      ["adam", "adagrad", "momentum", "rms_prop", "sgd", "yellow_fin"])
 
 
 @registry.register_ranged_hparams

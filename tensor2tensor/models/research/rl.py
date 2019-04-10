@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The Tensor2Tensor Authors.
+# Copyright 2019 The Tensor2Tensor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -36,6 +36,7 @@ from tensor2tensor.rl.envs.simulated_batch_gym_env import SimulatedBatchGymEnv
 from tensor2tensor.utils import registry
 from tensor2tensor.utils import t2t_model
 from tensor2tensor.utils import trainer_lib
+from tensor2tensor.utils.hparam import HParams
 
 import tensorflow as tf
 import tensorflow_probability as tfp
@@ -78,7 +79,7 @@ def ppo_base_v1():
 @registry.register_hparams
 def basic_policy_parameters():
   wrappers = None
-  return tf.contrib.training.HParams(wrappers=wrappers)
+  return HParams(wrappers=wrappers)
 
 
 @registry.register_hparams
@@ -134,9 +135,18 @@ def ppo_original_params():
 
 
 @registry.register_hparams
+def ppo_original_tiny():
+  """Parameters based on the original PPO paper, tiny version."""
+  hparams = ppo_original_params()
+  hparams.epoch_length = 5
+  hparams.optimization_batch_size = 1
+  return hparams
+
+
+@registry.register_hparams
 def ppo_ttt_params():
   """Parameters based on the original PPO paper."""
-  hparams = ppo_original_params()
+  hparams = ppo_original_tiny()
   hparams.policy_network = "feed_forward_categorical_policy"
   hparams.policy_problem_name = "dummy_policy_problem_ttt"
   return hparams
@@ -247,7 +257,7 @@ def make_simulated_env_kwargs(real_env, hparams, **extra_kwargs):
       (hparams, ["frame_stack_size", "intrinsic_reward_scale"])
   ]
   kwargs = {
-      attr: getattr(obj, attr)
+      attr: getattr(obj, attr)  # pylint: disable=g-complex-comprehension
       for (obj, attrs) in objs_and_attrs for attr in attrs
   }
   kwargs["model_name"] = hparams.generative_model
@@ -335,7 +345,7 @@ def ppo_pong_ae_base():
 def dqn_atari_base():
   # These params are based on agents/dqn/configs/dqn.gin
   # with some modifications taking into account our code
-  return tf.contrib.training.HParams(
+  return HParams(
       agent_gamma=0.99,
       agent_update_horizon=1,
       agent_min_replay_history=20000,  # agent steps
@@ -353,12 +363,18 @@ def dqn_atari_base():
       optimizer_epsilon=0.00001,
       optimizer_centered=True,
 
+      # TODO(kozak): change names maybe replay_buffer -> agent?
+      # Also batch_size is now buffer_batch_size in _DQNAgent.
       replay_buffer_replay_capacity=1000000,
-      replay_buffer_batch_size=32,
+      replay_buffer_buffer_batch_size=32,
 
       time_limit=27000,
       save_every_steps=50000,
       num_frames=int(20 * 1e6),
+
+      # TODO(konradczechowski) this is not used in trainer_model_free, clean
+      # this up after evaluation refactor
+      eval_episodes_num=3,
   )
 
 
@@ -370,16 +386,29 @@ def dqn_original_params():
   return hparams
 
 
+def rlmf_tiny_overrides():
+  """Parameters to override for tiny setting excluding agent-related hparams."""
+  return dict(
+      max_num_noops=1,
+      eval_max_num_noops=1,
+      rl_env_max_episode_steps=7,
+      eval_rl_env_max_episode_steps=7,
+      eval_sampling_temps=[0.0, 1.0],
+  )
+
+
 @registry.register_hparams
 def rlmf_original():
-  return tf.contrib.training.HParams(
+  return HParams(
       game="pong",
+      sticky_actions=False,
       base_algo="ppo",
       base_algo_params="ppo_original_params",
       batch_size=16,
       eval_batch_size=2,
       frame_stack_size=4,
       eval_sampling_temps=[0.0, 0.2, 0.5, 0.8, 1.0, 2.0],
+      max_num_noops=8,
       eval_max_num_noops=8,
       eval_rl_env_max_episode_steps=1000,
       resize_height_factor=2,
@@ -403,7 +432,7 @@ def rlmf_tictactoe():
   # Since we don't have any no-op actions, otherwise we have to have an
   # attribute called `get_action_meanings`.
   hparams.eval_max_num_noops = 0
-  hparams.add_hparam("max_num_noops", 0)
+  hparams.max_num_noops = 0
   hparams.rl_should_derive_observation_space = False
 
   hparams.policy_network = "feed_forward_categorical_policy"
@@ -411,7 +440,6 @@ def rlmf_tictactoe():
 
   # Number of last observations to feed to the agent
   hparams.frame_stack_size = 1
-
   return hparams
 
 
@@ -421,6 +449,33 @@ def rlmf_base():
   hparams = rlmf_original()
   hparams.add_hparam("ppo_epochs_num", 3000)
   hparams.add_hparam("ppo_eval_every_epochs", 100)
+  return hparams
+
+
+@registry.register_hparams
+def rlmf_tiny():
+  """Tiny set of hparams for model-free PPO."""
+  hparams = rlmf_original()
+  hparams = hparams.override_from_dict(rlmf_tiny_overrides())
+  hparams.batch_size = 2
+  hparams.base_algo_params = "ppo_original_tiny"
+  hparams.add_hparam("ppo_epochs_num", 3)
+  hparams.add_hparam("ppo_epoch_length", 2)
+  return hparams
+
+
+@registry.register_hparams
+def rlmf_dqn_tiny():
+  """Tiny DQN params."""
+  hparams = rlmf_original()
+  hparams = hparams.override_from_dict(rlmf_tiny_overrides())
+  hparams.batch_size = 1
+  hparams.base_algo = "dqn"
+  hparams.base_algo_params = "dqn_original_params"
+  hparams.add_hparam("dqn_num_frames", 128)
+  hparams.add_hparam("dqn_save_every_steps", 128)
+  hparams.add_hparam("dqn_replay_buffer_replay_capacity", 100)
+  hparams.add_hparam("dqn_agent_min_replay_history", 10)
   return hparams
 
 
@@ -437,14 +492,6 @@ def rlmf_eval():
   hparams.add_hparam("ppo_eval_every_epochs", 500)
   hparams.add_hparam("attempt", 0)
   hparams.add_hparam("moe_loss_coef", 0)
-  return hparams
-
-
-@registry.register_hparams
-def rlmf_tiny():
-  hparams = rlmf_base()
-  hparams.ppo_epochs_num = 100
-  hparams.ppo_eval_every_epochs = 10
   return hparams
 
 
@@ -481,14 +528,14 @@ class DummyPolicyProblem(video_utils.VideoProblem):
   def hparams(self, defaults, unused_model_hparams):
     p = defaults
     p.modality = {
-        "inputs": modalities.VideoModality,
-        "input_action": modalities.SymbolModalityWeightsAll,
-        "input_reward": modalities.SymbolModalityWeightsAll,
-        "targets": modalities.VideoModality,
-        "target_action": modalities.SymbolModalityWeightsAll,
-        "target_reward": modalities.SymbolModalityWeightsAll,
-        "target_policy": modalities.IdentityModality,
-        "target_value": modalities.IdentityModality,
+        "inputs": modalities.ModalityType.VIDEO,
+        "input_action": modalities.ModalityType.SYMBOL_WEIGHTS_ALL,
+        "input_reward": modalities.ModalityType.SYMBOL_WEIGHTS_ALL,
+        "targets": modalities.ModalityType.VIDEO,
+        "target_action": modalities.ModalityType.SYMBOL_WEIGHTS_ALL,
+        "target_reward": modalities.ModalityType.SYMBOL_WEIGHTS_ALL,
+        "target_policy": modalities.ModalityType.IDENTITY,
+        "target_value": modalities.ModalityType.IDENTITY,
     }
     p.vocab_size = {
         "inputs": 256,
@@ -587,6 +634,10 @@ class FeedForwardCnnSmallCategoricalPolicy(PolicyBase):
 
   def body(self, features):
     observations = features["inputs_raw"]
+    # Axis 0    - Batch.
+    # Axis 1    - Input Frames, 4 frames.
+    # Axis 2, 3 - Height & Width.
+    # Axis 4    - Channels RGB, 3 colours.
     x = tf.transpose(observations, [0, 2, 3, 1, 4])
     x_shape = common_layers.shape_list(x)
     x = tf.reshape(x, x_shape[:-2] + [-1])

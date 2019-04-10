@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The Tensor2Tensor Authors.
+# Copyright 2019 The Tensor2Tensor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -77,14 +77,14 @@ def _bucket_boundaries(max_length, min_length=8, length_bucket_step=1.1):
   return boundaries
 
 
-def _batching_scheme(batch_size,
-                     max_length,
-                     min_length_bucket,
-                     length_bucket_step,
-                     drop_long_sequences=False,
-                     shard_multiplier=1,
-                     length_multiplier=1,
-                     min_length=0):
+def batching_scheme(batch_size,
+                    max_length,
+                    min_length_bucket,
+                    length_bucket_step,
+                    drop_long_sequences=False,
+                    shard_multiplier=1,
+                    length_multiplier=1,
+                    min_length=0):
   """A batching scheme based on model hyperparameters.
 
   Every batch contains a number of sequences divisible by `shard_multiplier`.
@@ -169,7 +169,7 @@ def hparams_to_batching_scheme(hparams,
                                shard_multiplier=1,
                                length_multiplier=1):
   """Wrapper around _batching_scheme with hparams."""
-  return _batching_scheme(
+  return batching_scheme(
       batch_size=hparams.batch_size,
       min_length=hparams.min_length,
       max_length=hparams.max_length,
@@ -191,7 +191,7 @@ class DummyQueueRunner(object):
     return []
 
 
-def _pad_for_tpu(shapes_dict, hparams, max_length):
+def pad_for_tpu(shapes_dict, hparams, max_length):
   """Pads unknown features' dimensions for TPU."""
   padded_shapes = {}
 
@@ -289,7 +289,7 @@ def skip_random_fraction(dataset, data_file):
   return dataset.skip(num_skip)
 
 
-def _pad_batch(features, batch_multiple):
+def pad_batch(features, batch_multiple):
   """Pad batch dim of features to nearest multiple of batch_multiple."""
   feature = list(features.items())[0][1]
   batch_size = tf.shape(feature)[0]
@@ -300,9 +300,7 @@ def _pad_batch(features, batch_multiple):
   padded_features = {}
   for k, feature in features.items():
     rank = len(feature.shape)
-    paddings = []
-    for _ in range(rank):
-      paddings.append([0, 0])
+    paddings = [[0, 0] for _ in range(rank)]
     paddings[0][1] = batch_padding
     padded_feature = tf.pad(feature, paddings)
     padded_features[k] = padded_feature
@@ -416,7 +414,7 @@ def input_fn(dataset,
     # batch_size means tokens per datashard
     if config and config.use_tpu:
       dataset = dataset.filter(tpu_valid_size)
-      padded_shapes = _pad_for_tpu(dataset.output_shapes, hparams, max_length)
+      padded_shapes = pad_for_tpu(dataset.output_shapes, hparams, max_length)
       # on TPU, we use params["batch_size"], which specifies the number of
       # examples across all datashards
       batch_size = params["batch_size"]
@@ -429,7 +427,7 @@ def input_fn(dataset,
         dataset = dataset.padded_batch(
             batch_size, padded_shapes, drop_remainder=False)
         dataset = dataset.map(
-            functools.partial(_pad_batch, batch_multiple=batch_size),
+            functools.partial(pad_batch, batch_multiple=batch_size),
             num_parallel_calls=num_threads)
       else:
         dataset = dataset.padded_batch(
@@ -437,18 +435,18 @@ def input_fn(dataset,
     else:
       # On GPU, bucket by length
       dataset = dataset.filter(gpu_valid_size)
-      batching_scheme = hparams_to_batching_scheme(
+      cur_batching_scheme = hparams_to_batching_scheme(
           hparams,
           shard_multiplier=num_shards,
           length_multiplier=batch_size_multiplier)
       if hparams.use_fixed_batch_size:
         # Here  batch_size really means examples per datashard.
-        batching_scheme["batch_sizes"] = [hparams.batch_size]
-        batching_scheme["boundaries"] = []
+        cur_batching_scheme["batch_sizes"] = [hparams.batch_size]
+        cur_batching_scheme["boundaries"] = []
       dataset = dataset.apply(
           tf.data.experimental.bucket_by_sequence_length(
-              example_length, batching_scheme["boundaries"],
-              batching_scheme["batch_sizes"]))
+              example_length, cur_batching_scheme["boundaries"],
+              cur_batching_scheme["batch_sizes"]))
 
       if not is_training:
         batch_multiple = num_shards
@@ -462,7 +460,7 @@ def input_fn(dataset,
               "lead to incorrect metrics for non-zero-padded features, e.g. "
               "images. Use a single datashard (i.e. 1 GPU) in that case.")
           dataset = dataset.map(
-              functools.partial(_pad_batch, batch_multiple=batch_multiple),
+              functools.partial(pad_batch, batch_multiple=batch_multiple),
               num_parallel_calls=num_threads)
 
   dataset = dataset.map(define_shapes, num_parallel_calls=num_threads)
@@ -476,6 +474,82 @@ def input_fn(dataset,
   if (is_training and hasattr(hparams, "batch_shuffle_size") and
       hparams.batch_shuffle_size):
     dataset = dataset.shuffle(hparams.batch_shuffle_size)
+
+  # Split batches into chunks if targets are too long.
+  # The new "chunk_number" feature is 0 for the first chunk and goes up then.
+  # Chunks are reversed so the 0th chunk comes first, then the 1st and so on,
+  # so models can attend to them in the order they arrive. The last chunk is
+  # usually the one containing the end of the target sentence (EOS).
+  chunk_length = hparams.get("split_targets_chunk_length", 0)
+  max_chunks = hparams.get("split_targets_max_chunks", 100)
+  if chunk_length > 0:
+    def is_nonzero_chunk(example):
+      """A chunk is zero if all targets are 0s."""
+      return tf.less(0, tf.reduce_sum(tf.abs(example["targets"])))
+
+    def split_on_length(example):
+      """Split a batch of ditcs on length."""
+      x = example["targets"]
+      # TODO(kitaev): This code breaks if chunk_length * max_chunks < batch_size
+      length_diff = chunk_length * max_chunks - tf.shape(x)[1]
+      padded_x = tf.pad(x, [(0, 0), (0, length_diff), (0, 0), (0, 0)])
+      chunks = [padded_x[:, i*chunk_length:(i+1)*chunk_length, :, :]
+                for i in range(max_chunks - 1)]
+      chunks.append(padded_x[:, (max_chunks - 1)*chunk_length:, :, :])
+      new_example = {}
+      # Setting chunk_number to be tf.range(max_chunks) is incompatible with TPU
+      new_example["chunk_number"] = tf.concat([
+          tf.expand_dims(tf.ones_like(c) * n, axis=0)
+          for n, c in enumerate(chunks)
+      ],
+                                              axis=0)
+      new_example["targets"] = tf.concat(
+          [tf.expand_dims(c, axis=0) for c in chunks], axis=0)
+      for k in example:
+        if k != "targets":
+          assert k != "chunk_number", (
+              "Chunking code expects the chunk_number feature name to be "
+              "available"
+          )
+          new_example[k] = tf.concat(
+              [tf.expand_dims(example[k], axis=0) for _ in range(max_chunks)],
+              axis=0)
+      return tf.data.Dataset.from_tensor_slices(new_example)
+
+    dataset = dataset.flat_map(split_on_length)
+    dataset = dataset.filter(is_nonzero_chunk)
+
+    # The chunking data pipeline thus far creates batches of examples where all
+    # of the examples have the same chunk number. This can lead to periodic
+    # fluctuations in the loss; for example, when all examples in the batch have
+    # chunk number 0 the loss may be higher than midway through a sequence.
+    # Enabling split_targets_strided_training adjusts the data so that each
+    # batch includes examples at various points within a sequence.
+    if is_training and hparams.split_targets_strided_training:
+      # TODO(kitaev): make sure that shape inference works on GPU, not just TPU.
+      inferred_batch_size = dataset.output_shapes["targets"].as_list()[0]
+      if inferred_batch_size is None:
+        raise ValueError(
+            "Strided training is only implemented when the batch size can be "
+            "inferred statically, for example when training on TPU."
+        )
+      chunk_stride = inferred_batch_size * max(
+          1, max_chunks // inferred_batch_size) + 1
+
+      def collapse_nested_datasets(example):
+        """Converts a dataset of datasets to a dataset of tensor features."""
+        new_example = {}
+        for k, v in example.items():
+          v = tf.data.experimental.get_single_element(
+              v.batch(inferred_batch_size, drop_remainder=True))
+          new_example[k] = v
+        return tf.data.Dataset.from_tensor_slices(new_example)
+
+      dataset = dataset.apply(tf.data.experimental.unbatch())
+      dataset = dataset.window(inferred_batch_size, inferred_batch_size,
+                               chunk_stride)
+      dataset = dataset.flat_map(collapse_nested_datasets)
+      dataset = dataset.batch(inferred_batch_size, drop_remainder=True)
 
   def prepare_for_output(example):
     if not config or not config.use_tpu:

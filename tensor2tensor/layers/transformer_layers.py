@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The Tensor2Tensor Authors.
+# Copyright 2019 The Tensor2Tensor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,6 +25,11 @@ from tensor2tensor.utils import expert_utils
 from tensor2tensor.utils import mlperf_log
 
 import tensorflow as tf
+
+
+# TODO(lukaszkaiser): remove this function when not needed any more.
+def layers():
+  return common_layers.layers()
 
 
 def transformer_prepare_encoder(inputs, target_space, hparams, features=None):
@@ -81,7 +86,8 @@ def transformer_prepare_encoder(inputs, target_space, hparams, features=None):
   if hparams.proximity_bias:
     encoder_self_attention_bias += common_attention.attention_bias_proximal(
         common_layers.shape_list(inputs)[1])
-  if hparams.get("use_target_space_embedding", True):
+  if target_space is not None and hparams.get("use_target_space_embedding",
+                                              True):
     # Append target_space_id embedding to inputs.
     emb_target_space = common_layers.embedding(
         target_space,
@@ -197,7 +203,8 @@ def transformer_encoder(encoder_input,
               max_length=hparams.get("max_length"),
               vars_3d=hparams.get("attention_variables_3d"),
               activation_dtype=hparams.get("activation_dtype", "float32"),
-              weight_dtype=hparams.get("weight_dtype", "float32"))
+              weight_dtype=hparams.get("weight_dtype", "float32"),
+              hard_attention_k=hparams.get("hard_attention_k", 0))
           x = common_layers.layer_postprocess(x, y, hparams)
         with tf.variable_scope("ffn"):
           y = transformer_ffn_layer(
@@ -225,7 +232,8 @@ def transformer_ffn_layer(x,
                           losses=None,
                           cache=None,
                           decode_loop_step=None,
-                          readout_filter_size=0):
+                          readout_filter_size=0,
+                          layer_collection=None):
   """Feed-forward layer in the transformer.
 
   Args:
@@ -246,6 +254,8 @@ def transformer_ffn_layer(x,
         Only used for inference on TPU.
     readout_filter_size: if it's greater than 0, then it will be used instead of
       filter_size
+    layer_collection: A tensorflow_kfac.LayerCollection. Only used by the
+      KFAC optimizer. Default is None.
 
 
   Returns:
@@ -288,7 +298,8 @@ def transformer_ffn_layer(x,
         hparams.filter_size,
         hparams.hidden_size,
         dropout=hparams.relu_dropout,
-        dropout_broadcast_dims=relu_dropout_broadcast_dims)
+        dropout_broadcast_dims=relu_dropout_broadcast_dims,
+        layer_collection=layer_collection)
     if pad_remover:
       # Restore `conv_output` to the original shape of `x`, including padding.
       conv_output = tf.reshape(

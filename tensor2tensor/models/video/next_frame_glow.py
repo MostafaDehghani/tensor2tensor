@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The Tensor2Tensor Authors.
+# Copyright 2019 The Tensor2Tensor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -69,14 +69,71 @@ def next_frame_glow_hparams():
   # Pretrains the glow encoder for "pretrain_steps" number of steps.
   # By default, don't pretrain and learn end-to-end
   hparams.add_hparam("pretrain_steps", -1)
-  hparams.modality = {
-      "inputs": modalities.VideoModalityL1Raw,
-      "targets": modalities.VideoModalityL1Raw,
+  hparams.bottom = {
+      "inputs": modalities.video_raw_bottom,
+      "targets": modalities.video_raw_targets_bottom,
+  }
+  hparams.loss = {
+      "targets": modalities.video_l1_raw_loss,
+  }
+  hparams.top = {
+      "targets": modalities.video_raw_top,
   }
   hparams.init_batch_size = 256
   hparams.batch_size = 32
   # Possible options: are prev_frame, single_conv and normal
   hparams.top_prior = "single_conv"
+  return hparams
+
+
+@registry.register_hparams
+def next_frame_glow_bair_quant():
+  """Hparams to reproduce bits-per-pixel results on BAIR action-free dataset."""
+  hparams = next_frame_glow_hparams()
+  hparams.video_num_input_frames = 3
+  hparams.video_num_target_frames = 10
+  hparams.num_train_frames = 4
+  hparams.num_cond_latents = 3
+  hparams.depth = 24
+  hparams.latent_dist_encoder = "conv3d_net"
+  hparams.latent_encoder_width = 256
+  hparams.latent_architecture = "glow_resnet"
+  hparams.latent_encoder_depth = 5
+  hparams.latent_apply_dilations = True
+  hparams.latent_activation = "gatu"
+  hparams.activation = "gatu"
+  hparams.learning_rate_constant = 3e-4
+  hparams.learning_rate_schedule = "constant*linear_warmup"
+  hparams.learning_rate_warmup_steps = 10000
+  hparams.init_batch_size = 128
+  hparams.batch_size = 5
+  return hparams
+
+
+@registry.register_hparams
+def next_frame_glow_bair_qual():
+  """Hparams for qualitative video generation results."""
+  hparams = next_frame_glow_bair_quant()
+  hparams.coupling = "additive"
+  hparams.temperature = 0.5
+  hparams.coupling_width = 392
+  return hparams
+
+
+@registry.register_hparams
+def next_frame_glow_shapes():
+  """Hparams for qualitative and quantitative results on shapes dataset."""
+  hparams = next_frame_glow_bair_quant()
+  hparams.video_num_input_frames = 1
+  hparams.video_num_target_frames = 2
+  hparams.num_train_frames = 2
+  hparams.num_cond_latents = 1
+  hparams.coupling = "additive"
+  hparams.coupling_width = 512
+  hparams.latent_encoder_depth = 10
+  hparams.latent_skip = False
+  hparams.learning_rate_constant = 1e-4
+  hparams.batch_size = 10
   return hparams
 
 
@@ -212,7 +269,7 @@ class NextFrameGlow(glow.Glow):
     if self.hparams.gen_mode == "unconditional":
       predicted_video = tf.tile(
           predicted_video, [1, self.hparams.video_num_target_frames, 1, 1, 1])
-    predicted_video = self.scale(predicted_video)
+    predicted_video = glow_ops.postprocess(predicted_video)
 
     # Output of a single decode / sample.
     output_features = {}

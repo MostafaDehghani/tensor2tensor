@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The Tensor2Tensor Authors.
+# Copyright 2019 The Tensor2Tensor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -44,6 +44,7 @@ Frame = collections.namedtuple(
 )
 
 
+# pylint: disable=g-complex-comprehension
 class Observation(object):
   """Encoded observations.
 
@@ -105,12 +106,12 @@ class EnvSimulationProblem(video_utils.VideoProblem):
   def hparams(self, defaults, unused_model_hparams):
     p = defaults
     p.modality = {
-        "inputs": modalities.VideoModality,
-        "input_reward": modalities.SymbolModalityWeightsAll,
-        "input_action": modalities.SymbolModalityWeightsAll,
-        "targets": modalities.VideoModality,
-        "target_reward": modalities.SymbolModalityWeightsAll,
-        "target_action": modalities.SymbolModalityWeightsAll,
+        "inputs": modalities.ModalityType.VIDEO,
+        "input_reward": modalities.ModalityType.SYMBOL_WEIGHTS_ALL,
+        "input_action": modalities.ModalityType.SYMBOL_WEIGHTS_ALL,
+        "targets": modalities.ModalityType.VIDEO,
+        "target_reward": modalities.ModalityType.SYMBOL_WEIGHTS_ALL,
+        "target_action": modalities.ModalityType.SYMBOL_WEIGHTS_ALL,
     }
     p.vocab_size = {
         "inputs": 256,
@@ -592,7 +593,7 @@ class T2TGymEnv(T2TEnv):
   def __init__(self, base_env_name=None, batch_size=1, grayscale=False,
                resize_height_factor=2, resize_width_factor=2,
                rl_env_max_episode_steps=-1, max_num_noops=0,
-               maxskip_envs=False,
+               maxskip_envs=False, sticky_actions=False,
                should_derive_observation_space=True,
                **kwargs):
     if base_env_name is None:
@@ -606,6 +607,7 @@ class T2TGymEnv(T2TEnv):
     self.resize_width_factor = resize_width_factor
     self.rl_env_max_episode_steps = rl_env_max_episode_steps
     self.maxskip_envs = maxskip_envs
+    self.sticky_actions = sticky_actions
     self._initial_state = None
     self._initial_frames = None
     if not self.name:
@@ -615,7 +617,7 @@ class T2TGymEnv(T2TEnv):
     self._envs = [
         gym_utils.make_gym_env(
             base_env_name, rl_env_max_episode_steps=rl_env_max_episode_steps,
-            maxskip_env=maxskip_envs)
+            maxskip_env=maxskip_envs, sticky_actions=sticky_actions)
         for _ in range(self.batch_size)]
 
     # max_num_noops works only with atari envs.
@@ -640,7 +642,7 @@ class T2TGymEnv(T2TEnv):
 
     if self.should_derive_observation_space:
       with self._tf_graph.obj.as_default():
-        self._resize = dict()
+        self._resize = {}
         orig_height, orig_width = orig_observ_space.shape[:2]
         self._img_batch_t = _Noncopyable(tf.placeholder(
             dtype=tf.uint8, shape=(None, orig_height, orig_width, 3)))

@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The Tensor2Tensor Authors.
+# Copyright 2019 The Tensor2Tensor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -86,9 +86,6 @@ class SimulatedBatchGymEnv(Env):
     if indices is None:
       indices = np.array(range(self.batch_size))
     obs = self._sess.run(self._reset_op, feed_dict={self._indices_t: indices})
-    # TODO(pmilos): remove if possible
-    # obs[:, 0, 0, 0] = 0
-    # obs[:, 0, 0, 1] = 255
     return obs
 
   def step(self, actions):
@@ -99,3 +96,4 @@ class SimulatedBatchGymEnv(Env):
 
   def close(self):
     self._sess.close()
+    self._batch_env.close()

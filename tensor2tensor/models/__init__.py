@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The Tensor2Tensor Authors.
+# Copyright 2019 The Tensor2Tensor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ from tensor2tensor.layers import modalities  # pylint: disable=g-import-not-at-t
 from tensor2tensor.models import basic
 from tensor2tensor.models import bytenet
 from tensor2tensor.models import distillation
+from tensor2tensor.models import evolved_transformer
 from tensor2tensor.models import image_transformer
 from tensor2tensor.models import image_transformer_2d
 from tensor2tensor.models import lstm
@@ -38,6 +39,7 @@ from tensor2tensor.models import resnet
 from tensor2tensor.models import revnet
 from tensor2tensor.models import shake_shake
 from tensor2tensor.models import slicenet
+from tensor2tensor.models import text_cnn
 from tensor2tensor.models import transformer
 from tensor2tensor.models import vanilla_gan
 from tensor2tensor.models import xception
@@ -52,6 +54,7 @@ from tensor2tensor.models.research import gene_expression
 from tensor2tensor.models.research import glow
 from tensor2tensor.models.research import lm_experiments
 from tensor2tensor.models.research import moe_experiments
+from tensor2tensor.models.research import multiquery_paper
 from tensor2tensor.models.research import rl
 from tensor2tensor.models.research import similarity_transformer
 from tensor2tensor.models.research import super_lm
@@ -75,7 +78,6 @@ from tensor2tensor.models.video import epva
 from tensor2tensor.models.video import next_frame_glow
 from tensor2tensor.models.video import savp
 from tensor2tensor.models.video import sv2p
-from tensor2tensor.models.video import svg_lp
 
 from tensor2tensor.utils import registry
 

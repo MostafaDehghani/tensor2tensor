@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The Tensor2Tensor Authors.
+# Copyright 2019 The Tensor2Tensor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -45,13 +45,8 @@ flags.DEFINE_bool(
 
 
 def resize_video_frames(images, size):
-  resized_images = []
-  for image in images:
-    resized_images.append(
-        tf.to_int64(
-            tf.image.resize_images(image, [size, size],
-                                   tf.image.ResizeMethod.BILINEAR)))
-  return resized_images
+  return [tf.to_int64(tf.image.resize_images(
+      image, [size, size], tf.image.ResizeMethod.BILINEAR)) for image in images]
 
 
 def video_augmentation(features, hue=False, saturate=False, contrast=False):
@@ -93,6 +88,9 @@ def create_border(video, color="blue", border_percent=2):
   Returns:
     video: 5-D NumPy array.
   """
+  # Do not create border if the video is not in RGB format
+  if video.shape[-1] != 3:
+    return video
   color_to_axis = {"blue": 2, "red": 0, "green": 1}
   axis = color_to_axis[color]
   _, _, height, width, _ = video.shape
@@ -115,7 +113,7 @@ def convert_videos_to_summaries(input_videos, output_videos, target_videos,
     output_videos: 5-D NumPy array, (NTHWC) model predictions.
     target_videos: 5-D NumPy array, (NTHWC) target frames.
     tag: tf summary tag.
-    decode_hparams: tf.contrib.training.HParams.
+    decode_hparams: HParams.
     display_ground_truth: Whether or not to display ground truth videos.
   Returns:
     summaries: a list of tf frame-by-frame and video summaries.
@@ -274,7 +272,7 @@ class VideoProblem(problem.Problem):
     hparams.video_num_target_frames.
 
     Args:
-      hparams: tf.contrib.training.HParams.
+      hparams: HParams.
     Returns:
       num_frames: int.
     """
@@ -773,8 +771,8 @@ class Video2ClassProblem(VideoProblemOld):
 
   def hparams(self, defaults, unused_model_hparams):
     p = defaults
-    p.modality = {"inputs": modalities.ImageModality,
-                  "targets": modalities.ClassLabelModality}
+    p.modality = {"inputs": modalities.ModalityType.IMAGE,
+                  "targets": modalities.ModalityType.CLASS_LABEL}
     p.vocab_size = {"inputs": 256,
                     "targets": self.num_classes}
     p.input_space_id = problem.SpaceID.IMAGE

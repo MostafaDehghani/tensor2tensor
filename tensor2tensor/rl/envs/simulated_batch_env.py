@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The Tensor2Tensor Authors.
+# Copyright 2019 The Tensor2Tensor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -294,6 +294,5 @@ class SimulatedBatchEnv(in_graph_batch_env.InGraphBatchEnv):
       self._video_writer.finish_to_disk()
     self._video_writer = None
 
-  def __del__(self):
+  def close(self):
     self._video_reset_writer()
-    super(SimulatedBatchEnv, self).__del__()

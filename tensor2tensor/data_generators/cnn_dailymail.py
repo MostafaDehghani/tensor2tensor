@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The Tensor2Tensor Authors.
+# Copyright 2019 The Tensor2Tensor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -118,9 +118,7 @@ def example_splits(url_file, all_files):
 
   all_files_map = {f.split("/")[-1]: f for f in all_files}
 
-  urls = []
-  for line in tf.gfile.Open(url_file):
-    urls.append(line.strip().encode("utf-8"))
+  urls = [line.strip().encode("utf-8") for line in tf.gfile.Open(url_file)]
 
   filelist = []
   for url in urls:
@@ -250,8 +248,8 @@ class SummarizeCnnDailymailWikiLMSharedVocab(SummarizeCnnDailymail32k):
   """Summarize CNN and Daily Mail articles using the Wiki 32k vocab."""
 
   @property
-  def vocab_filename(self):
-    return wiki_lm.LanguagemodelEnWiki32k().vocab_filename
+  def use_vocab_from_other_problem(self):
+    return wiki_lm.LanguagemodelEnWiki32k()
 
 
 @registry.register_problem
@@ -259,8 +257,8 @@ class SummarizeCnnDailymailWikiLMSharedVocab64k(SummarizeCnnDailymail32k):
   """Summarize CNN and Daily Mail articles using the Wiki 64k vocab."""
 
   @property
-  def vocab_filename(self):
-    return wiki_lm.LanguagemodelEnWiki64k().vocab_filename
+  def use_vocab_from_other_problem(self):
+    return wiki_lm.LanguagemodelEnWiki64k()
 
 
 @registry.register_problem
@@ -268,8 +266,33 @@ class SummarizeCnnDailymailWikiLMMultiVocab64k(SummarizeCnnDailymail32k):
   """Summarize CNN and Daily Mail articles using multi-lingual 64k vocab."""
 
   @property
-  def vocab_filename(self):
-    return wiki_lm.LanguagemodelDeEnFrRoWiki64k().vocab_filename
+  def use_vocab_from_other_problem(self):
+    return wiki_lm.LanguagemodelDeEnFrRoWiki64k()
+
+
+@registry.register_problem
+class SummarizeCnnDailymailMulti64kPacked1k(SummarizeCnnDailymail32k):
+  """Summarize CNN and Daily Mail articles using multi-lingual 64k vocab."""
+
+  @property
+  def use_vocab_from_other_problem(self):
+    return wiki_lm.LanguagemodelDeEnFrRoWiki64k()
+
+  @property
+  def packed_length(self):
+    return 1024
+
+  @property
+  def num_training_examples(self):
+    return 252600
+
+  @property
+  def inputs_prefix(self):
+    return "CNN Daily Mail article to summary "
+
+  @property
+  def targets_prefix(self):
+    return "CNN Daily Mail summary to article "
 
 
 @registry.register_problem
@@ -277,8 +300,8 @@ class SummarizeFracCnnDailymailWikiLMSharedVocab64k(SummarizeCnnDailymail32k):
   """Summarize a fraction of CNN/DM articles using the Wiki 64k vocab."""
 
   @property
-  def vocab_filename(self):
-    return wiki_lm.LanguagemodelEnWiki64k().vocab_filename
+  def use_vocab_from_other_problem(self):
+    return wiki_lm.LanguagemodelEnWiki64k()
 
   def fraction_of_data(self):
     return 1.

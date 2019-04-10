@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The Tensor2Tensor Authors.
+# Copyright 2019 The Tensor2Tensor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -177,12 +177,9 @@ class PlayerEnv(gym.Env):
     keys_to_action = {}
 
     for action_id, action_meaning in enumerate(self.action_meanings):
-      keys = []
-      for keyword, key in keyword_to_key.items():
-        if keyword in action_meaning:
-          keys.append(key)
-      keys_tuple = tuple(sorted(keys))
-      del keys
+      keys_tuple = tuple(sorted([
+          key for keyword, key in keyword_to_key.items()
+          if keyword in action_meaning]))
       assert keys_tuple not in keys_to_action
       keys_to_action[keys_tuple] = action_id
 

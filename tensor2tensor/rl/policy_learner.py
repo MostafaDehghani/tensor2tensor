@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The Tensor2Tensor Authors.
+# Copyright 2019 The Tensor2Tensor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -45,8 +45,6 @@ class PolicyLearner(object):
       report_fn=None
   ):
     """Train."""
-    # TODO(konradczechowski): pass name_scope instead of epoch?
-    # TODO(konradczechowski): move 'simulated' to  batch_env
     raise NotImplementedError()
 
   def evaluate(self, env_fn, hparams, sampling_temp):

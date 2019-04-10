@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The Tensor2Tensor Authors.
+# Copyright 2019 The Tensor2Tensor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -335,7 +335,7 @@ def vqa_attention_base():
   hparams = common_hparams.basic_params1()
   hparams.batch_size = 128
   hparams.use_fixed_batch_size = True,
-  hparams.optimizer = "Adam"
+  hparams.optimizer = "adam"
   hparams.optimizer_adam_beta1 = 0.9
   hparams.optimizer_adam_beta2 = 0.999
   hparams.optimizer_adam_epsilon = 1e-8

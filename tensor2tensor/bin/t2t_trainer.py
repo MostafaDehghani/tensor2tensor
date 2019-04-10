@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The Tensor2Tensor Authors.
+# Copyright 2019 The Tensor2Tensor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import sys
 from tensor2tensor import models  # pylint: disable=unused-import
 from tensor2tensor import problems as problems_lib  # pylint: disable=unused-import
 from tensor2tensor.data_generators import problem  # pylint: disable=unused-import
+
 from tensor2tensor.utils import cloud_mlengine
 from tensor2tensor.utils import decoding
 from tensor2tensor.utils import flags as t2t_flags  # pylint: disable=unused-import
@@ -35,6 +36,7 @@ from tensor2tensor.utils import usr_dir
 import tensorflow as tf
 
 from tensorflow.contrib.tpu.python.tpu import tpu_config
+
 
 flags = tf.flags
 FLAGS = flags.FLAGS
@@ -48,6 +50,9 @@ flags.DEFINE_string("t2t_usr_dir", None,
                     "available to the t2t-trainer.")
 flags.DEFINE_integer("random_seed", None, "Random seed.")
 flags.DEFINE_integer("tpu_num_shards", 8, "Number of tpu shards.")
+flags.DEFINE_string("tpu_job_name", None,
+                    "TPU job name. TPUEstimator can auto-infer this but if the "
+                    "configuration is esoteric it should be provided here.")
 flags.DEFINE_integer("iterations_per_loop", 100,
                      "Number of iterations in a TPU training loop.")
 flags.DEFINE_bool("use_tpu", False, "Whether to use TPU.")
@@ -215,6 +220,8 @@ def create_run_config(hp, output_dir=None):
     save_ckpt_steps = None
   assert FLAGS.output_dir or FLAGS.checkpoint_path
   tpu_config_extra_kwargs = {}
+  if FLAGS.tpu_job_name is not None:
+    tpu_config_extra_kwargs["tpu_job_name"] = FLAGS.tpu_job_name
 
   if getattr(hp, "mtf_mode", False):
     save_ckpt_steps = None  # Disable the default saver

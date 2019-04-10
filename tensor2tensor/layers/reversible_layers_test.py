@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The Tensor2Tensor Authors.
+# Copyright 2019 The Tensor2Tensor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,13 +23,17 @@ from absl.testing import parameterized
 import numpy as np
 
 from tensor2tensor.layers import reversible_layers as reversible
+from tensor2tensor.utils import test_utils
 
 import tensorflow as tf
+from tensorflow_probability import edward2 as ed
+tf.compat.v1.enable_eager_execution()
+
 
 
 class ReversibleLayersTest(parameterized.TestCase, tf.test.TestCase):
 
-  @tf.contrib.eager.run_test_in_graph_and_eager_modes()
+  @test_utils.run_in_graph_and_eager_modes()
   def testActNorm(self):
     np.random.seed(83243)
     batch_size = 25
@@ -54,7 +58,7 @@ class ReversibleLayersTest(parameterized.TestCase, tf.test.TestCase):
     self.assertAllClose(mean_val, np.zeros(channels), atol=0.25)
     self.assertAllClose(variance_val, np.ones(channels), atol=0.25)
 
-  @tf.contrib.eager.run_test_in_graph_and_eager_modes()
+  @test_utils.run_in_graph_and_eager_modes()
   def testMADELeftToRight(self):
     np.random.seed(83243)
     batch_size = 2
@@ -76,7 +80,7 @@ class ReversibleLayersTest(parameterized.TestCase, tf.test.TestCase):
     self.assertAllEqual(outputs_val[:, 0, :], np.zeros((batch_size, units)))
     self.assertEqual(outputs_val.shape, (batch_size, length, units))
 
-  @tf.contrib.eager.run_test_in_graph_and_eager_modes()
+  @test_utils.run_in_graph_and_eager_modes()
   def testMADERightToLeft(self):
     np.random.seed(1328)
     batch_size = 2
@@ -101,7 +105,7 @@ class ReversibleLayersTest(parameterized.TestCase, tf.test.TestCase):
     self.assertAllEqual(outputs_val[:, -1, :], np.zeros((batch_size, units)))
     self.assertEqual(outputs_val.shape, (batch_size, length, units))
 
-  @tf.contrib.eager.run_test_in_graph_and_eager_modes()
+  @test_utils.run_in_graph_and_eager_modes()
   def testMADENoHidden(self):
     np.random.seed(532)
     batch_size = 2
@@ -122,6 +126,32 @@ class ReversibleLayersTest(parameterized.TestCase, tf.test.TestCase):
     outputs_val = self.evaluate(outputs)
     self.assertAllEqual(outputs_val[:, 0, :], np.zeros((batch_size, units)))
     self.assertEqual(outputs_val.shape, (batch_size, length, units))
+
+  @test_utils.run_in_graph_and_eager_modes()
+  def testTransformedRandomVariable(self):
+    class Exp(tf.keras.layers.Layer):
+      """Exponential activation function for reversible networks."""
+
+      def __call__(self, inputs, *args, **kwargs):
+        if not isinstance(inputs, ed.RandomVariable):
+          return super(Exp, self).__call__(inputs, *args, **kwargs)
+        return reversible.TransformedRandomVariable(inputs, self)
+
+      def call(self, inputs):
+        return tf.exp(inputs)
+
+      def reverse(self, inputs):
+        return tf.log(inputs)
+
+      def log_det_jacobian(self, inputs):
+        return -tf.log(inputs)
+
+    x = ed.Normal(0., 1.)
+    y = Exp()(x)
+    y_sample = self.evaluate(y.distribution.sample())
+    y_log_prob = self.evaluate(y.distribution.log_prob(y_sample))
+    self.assertGreater(y_sample, 0.)
+    self.assertTrue(np.isfinite(y_log_prob))
 
 
 if __name__ == '__main__':

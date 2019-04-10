@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The Tensor2Tensor Authors.
+# Copyright 2019 The Tensor2Tensor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -350,7 +350,7 @@ class UniversalTransformerEncoder(transformer.Transformer):
 
 
 def update_hparams_for_universal_transformer(hparams):
-  """Adds deault hparams for all of the variants of the Universal Transformer.
+  """Adds default hparams for all of the variants of the Universal Transformer.
 
   Args:
     hparams: default hparams (usually one of the standard hparams from
@@ -449,6 +449,7 @@ def update_hparams_for_universal_transformer(hparams):
 
 @registry.register_hparams
 def universal_transformer_base():
+  """Base parameters for Universal Transformer."""
   hparams = transformer.transformer_base()
   # To have a similar capacity to the transformer_base with 6 layers,
   # we need to increase the size of the UT's layer
@@ -476,6 +477,14 @@ def universal_transformer_big():
   hparams = update_hparams_for_universal_transformer(hparams)
   hparams.hidden_size = 2048
   hparams.filter_size = 8192
+  return hparams
+
+
+@registry.register_hparams
+def universal_transformer_base_fp16():
+  hparams = transformer.transformer_base()
+  hparams = update_hparams_for_universal_transformer(hparams)
+  hparams.activation_dtype = "float16"
   return hparams
 
 
@@ -554,6 +563,19 @@ def adaptive_universal_transformer_multilayer_tpu():
   # hparams.add_sru = True
   # hparams.self_attention_type = "dot_product_relative_v2"
   # hparams.max_relative_position = 256
+  return hparams
+
+
+@registry.register_hparams
+def adaptive_universal_transformer_multilayer_hard():
+  """Multi-layer config for adaptive Transformer with hard attention."""
+  hparams = adaptive_universal_transformer_multilayer_tpu()
+  hparams.batch_size = 256
+  hparams.hard_attention_k = 8
+  hparams.add_step_timing_signal = True
+  # hparams.add_sru = True  # This is very slow on GPUs, does it help?
+  hparams.self_attention_type = "dot_product_relative_v2"
+  hparams.max_relative_position = 256
   return hparams
 
 

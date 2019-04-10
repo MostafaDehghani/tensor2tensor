@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The Tensor2Tensor Authors.
+# Copyright 2019 The Tensor2Tensor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -508,7 +508,7 @@ def sparse_message_pass(node_states,
       incoming_edges = tf.tile(incoming_edges, [1, hidden_size])
       final_node_states /= incoming_edges + 1e-7
 
-  return final_node_states
+  return tf.reshape(final_node_states, [n, hidden_size])
 
 
 def multihead_mpnn_attention(node_states,

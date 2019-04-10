@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The Tensor2Tensor Authors.
+# Copyright 2019 The Tensor2Tensor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ from __future__ import print_function
 
 from absl.testing import parameterized
 from tensor2tensor.data_generators import imagenet
+from tensor2tensor.utils.hparam import HParams
 
 import tensorflow as tf
 
@@ -34,7 +35,7 @@ class ImagenetTest(parameterized.TestCase, tf.test.TestCase):
   def testImagenetMultiResolutionPreprocessExample(self, resize_method):
     example = {"inputs": tf.random_uniform([64, 64, 3], minval=-1.)}
     mode = tf.estimator.ModeKeys.TRAIN
-    hparams = tf.contrib.training.HParams(resolutions=[8, 16, 32])
+    hparams = HParams(resolutions=[8, 16, 32])
     if resize_method is not None:
       hparams.resize_method = resize_method
 

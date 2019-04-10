@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The Tensor2Tensor Authors.
+# Copyright 2019 The Tensor2Tensor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -29,6 +29,72 @@ import tensorflow_probability as tfp
 
 arg_scope = tf.contrib.framework.arg_scope
 add_arg_scope = tf.contrib.framework.add_arg_scope
+
+
+def linear_interpolate(tensor1, tensor2, coeffs):
+  """Linearly interpolate between two tensors at coeff.
+
+  Args:
+    tensor1: 3-D Tensor, NHWC
+    tensor2: 3-D Tensor, NHWC
+    coeffs: list of floats.
+  Returns:
+    interp_latents: list of interpolated 4-D Tensors, shape=(1HWC)
+  """
+  interp_tensors = []
+  for coeff in coeffs:
+    interp_tensor = tensor1 + coeff * (tensor2 - tensor1)
+    interp_tensors.append(interp_tensor)
+  return tf.concat(interp_tensors, axis=0)
+
+
+def linear_interpolate_rank(tensor1, tensor2, coeffs, rank=1):
+  """Linearly interpolate channel at "rank" between two tensors.
+
+  The channels are ranked according to their L2 norm between tensor1[channel]
+  and tensor2[channel].
+
+  Args:
+    tensor1: 4-D Tensor, NHWC
+    tensor2: 4-D Tensor, NHWC
+    coeffs: list of floats.
+    rank: integer.
+  Returns:
+    interp_latents: list of interpolated 4-D Tensors, shape=(NHWC)
+  """
+  # sum across space, max across channels.
+  _, _, _, num_channels = common_layers.shape_list(tensor1)
+  diff_sq_sum = tf.reduce_sum((tensor1 - tensor2)**2, axis=(0, 1, 2))
+  _, feature_ranks = tf.math.top_k(diff_sq_sum, k=rank)
+  feature_rank = feature_ranks[-1]
+  channel_inds = tf.range(num_channels, dtype=tf.int32)
+  channel_mask = tf.equal(channel_inds, feature_rank)
+  ones_t = tf.ones(num_channels, dtype=tf.float32)
+  zeros_t = tf.zeros(num_channels, dtype=tf.float32)
+
+  interp_tensors = []
+  for coeff in coeffs:
+    curr_coeff = tf.where(channel_mask, coeff * ones_t, zeros_t)
+    interp_tensor = tensor1 + curr_coeff * (tensor2 - tensor1)
+    interp_tensors.append(interp_tensor)
+  return tf.concat(interp_tensors, axis=0)
+
+
+def postprocess(x, n_bits_x=8):
+  """Converts x from [-0.5, 0.5], to [0, 255].
+
+  Args:
+    x: 3-D or 4-D Tensor normalized between [-0.5, 0.5]
+    n_bits_x: Number of bits representing each pixel of the output.
+              Defaults to 8, to default to 256 possible values.
+  Returns:
+    x: 3-D or 4-D Tensor representing images or videos.
+  """
+  x = tf.where(tf.is_finite(x), x, tf.ones_like(x))
+  x = tf.clip_by_value(x, -0.5, 0.5)
+  x += 0.5
+  x = x * 2**n_bits_x
+  return tf.cast(tf.clip_by_value(x, 0, 255), dtype=tf.uint8)
 
 
 class TemperedNormal(tfp.distributions.Normal):
@@ -318,11 +384,12 @@ def invertible_1x1_conv(name, x, reverse=False):
       w = tf.reshape(w, [1, 1] + w_shape)
       x = tf.nn.conv2d(x, w, [1, 1, 1, 1], "SAME", data_format="NHWC")
     else:
-      u_inv = tf.matrix_inverse(u)
-      l_inv = tf.matrix_inverse(l)
-      p_inv = tf.matrix_inverse(p)
-      w_inv = tf.matmul(u_inv, tf.matmul(l_inv, p_inv))
-      w_inv = tf.reshape(w_inv, [1, 1]+w_shape)
+      # TODO(b/111271662): Remove when supported.
+      def tpu_inv(m):
+        """tf.linalg.inv workaround until it is supported on TPU."""
+        q, r = tf.linalg.qr(m)
+        return tf.linalg.triangular_solve(r, tf.transpose(q), lower=False)
+      w_inv = tf.reshape(tpu_inv(w), [1, 1]+w_shape)
       x = tf.nn.conv2d(
           x, w_inv, [1, 1, 1, 1], "SAME", data_format="NHWC")
       objective *= -1
@@ -708,7 +775,7 @@ def get_dilation_rates(hparams, width):
   """Get a list of valid dilation rates.
 
   Args:
-    hparams: tf.contrib.training.HParams.
+    hparams: HParams.
     width: spatial dimension. Ensures that the effective filter size is
            not larger than the spatial dimension.
   Returns:
@@ -798,7 +865,7 @@ def latent_to_dist(name, x, hparams, output_channels=None):
   Args:
     name: variable scope.
     x: 4-D Tensor of shape (NHWC)
-    hparams: tf.contrib.training.HParams.
+    hparams: HParams.
       latent_architecture - can be "single_conv", "glow_nn" or "glow_resnet",
                             default = single_conv
       latent_encoder_depth - int, depth of architecture, valid if
@@ -859,7 +926,7 @@ def noise_op(latents, hparams):
 
   Args:
     latents: 4-D or 5-D tensor, shape=(NTHWC) or (NHWC).
-    hparams: tf.contrib.training.HParams.
+    hparams: HParams.
   Returns:
     latents: latents with isotropic gaussian noise appended.
   """

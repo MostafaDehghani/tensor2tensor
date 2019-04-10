@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The Tensor2Tensor Authors.
+# Copyright 2019 The Tensor2Tensor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -32,8 +32,8 @@ class EvalTest(tf.test.TestCase):
     temp_dir = tf.test.get_temp_dir()
     evaluator.evaluate(
         loop_hparams, planner_hparams, temp_dir, temp_dir, temp_dir,
-        agent_type="random", eval_with_learner=False, log_every_steps=None,
-        debug_video_path=""
+        agent_type="random", eval_mode="agent_real", eval_with_learner=False,
+        log_every_steps=None, debug_video_path=""
     )
 
 

@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The Tensor2Tensor Authors.
+# Copyright 2019 The Tensor2Tensor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import six
 
 from tensor2tensor.data_generators import gym_env
 from tensor2tensor.utils import registry
+from tensor2tensor.utils.hparam import HParams
 
 import tensorflow as tf
 
@@ -44,7 +45,7 @@ HP_SCOPES = ["loop", "model", "ppo"]
 
 
 def _rlmb_base():
-  return tf.contrib.training.HParams(
+  return HParams(
       epochs=15,
       # Total frames used for training. This will be distributed evenly across
       # hparams.epochs.
@@ -88,6 +89,7 @@ def _rlmb_base():
       eval_rl_env_max_episode_steps=1000,
 
       game="pong",
+      sticky_actions=False,
       # If set, use this as the gym env name, instead of changing game mode etc.
       rl_env_name="",
       # Controls whether we should derive observation space, do some
@@ -109,6 +111,7 @@ def _rlmb_base():
       # This is only used for world-model evaluation currently, PolicyLearner
       # uses algorithm specific hparams to set this during training.
       simulated_rollout_length=50,
+      wm_policy_param_sharing=False,
 
       # To be overridden.
       base_algo="",
@@ -143,7 +146,6 @@ def rlmb_ppo_base():
       # Number of simulated environments to train on simultaneously.
       simulated_batch_size=16,
       eval_batch_size=32,
-      wm_policy_param_sharing=False,
 
       # Unused; number of PPO epochs is calculated from the real frame limit.
       real_ppo_epochs_num=0,
@@ -192,13 +194,17 @@ def rlmb_dqn_base():
       base_algo="dqn",
       base_algo_params="dqn_original_params",
       real_batch_size=1,
-      simulated_batch_size=1,
+      simulated_batch_size=16,
       dqn_agent_generates_trainable_dones=False,
       eval_batch_size=1,
       # Must be equal to dqn_time_limit for now
       simulated_rollout_length=simulated_rollout_length,
       dqn_time_limit=simulated_rollout_length,
       simulation_flip_first_random_for_beginning=False,
+      dqn_eval_episodes_num=3,
+
+      # TODO(kc): only for model-free compatibility, remove this
+      epochs_num=-1,
   )
   update_hparams(hparams, dqn_params)
   return hparams
@@ -515,7 +521,7 @@ def rlmb_ppo_tiny():
   hparams = hparams.override_from_dict(_rlmb_tiny_overrides())
   update_hparams(hparams, dict(
       ppo_epochs_num=2,
-      ppo_epoch_length=hparams.simulated_rollout_length,
+      ppo_epoch_length=10,
       real_ppo_epoch_length=36,
       real_ppo_effective_num_agents=2,
       real_batch_size=1,
@@ -814,7 +820,7 @@ def merge_unscoped_hparams(scopes_and_hparams):
       scoped_key = "%s.%s" % (scope, key)
       merged_values[scoped_key] = value
 
-  return tf.contrib.training.HParams(**merged_values)
+  return HParams(**merged_values)
 
 
 def split_scoped_hparams(scopes, merged_hparams):
@@ -827,7 +833,7 @@ def split_scoped_hparams(scopes, merged_hparams):
     split_values[scope][key] = value
 
   return [
-      tf.contrib.training.HParams(**split_values[scope]) for scope in scopes
+      HParams(**split_values[scope]) for scope in scopes
   ]
 
 
@@ -881,7 +887,7 @@ def dynamic_register_hparams(name, hparams):
 
   @registry.register_hparams(name)
   def new_hparams_set():
-    return tf.contrib.training.HParams(**hparams.values())
+    return HParams(**hparams.values())
 
   return new_hparams_set
 

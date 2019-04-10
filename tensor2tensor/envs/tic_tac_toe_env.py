@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The Tensor2Tensor Authors.
+# Copyright 2019 The Tensor2Tensor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,8 +31,6 @@ import numpy as np
 from tensor2tensor.data_generators import problem
 from tensor2tensor.layers import modalities
 from tensor2tensor.rl import gym_utils
-
-import tensorflow as tf
 
 
 def encode_pos(i, j):
@@ -188,21 +186,18 @@ class TicTacToeEnv(gym.Env):
     return self.board_state, reward, self.done, {}
 
   def hparams(self, defaults, unused_model_hparams):
-    tf.logging.error("@@@ new tictactoe hparams are being called!")
     p = defaults
     p.modality = {
-        "inputs": modalities.IdentitySymbolModality,
-        "targets": modalities.IdentitySymbolModality,
+        "inputs": modalities.ModalityType.IDENTITY_SYMBOL,
+        "targets": modalities.ModalityType.IDENTITY_SYMBOL,
     }
     p.vocab_size = {
-        "inputs": 3,
-        "targets": 3,
+        "inputs": 3,  # since at each box, the input is either x, o or -.
+        # nevermind that we have a 3x3 box.
+        "targets": 3,  # -1, 0, 1
     }
     p.input_space_id = 0  # problem.SpaceID.GENERIC
     p.target_space_id = 0  # problem.SpaceID.GENERIC
-
-    # TODO(afrozm): This doesn't work without returning the hparams object.
-    return p
 
 
 # TODO(afrozm): Figure out how to get rid of this.
@@ -218,12 +213,12 @@ class DummyPolicyProblemTTT(problem.Problem):
     self._ttt_env.hparams(defaults, model_hparams)
     # Do these belong here?
     defaults.modality.update({
-        "input_action": modalities.SymbolModalityWeightsAll,
-        "input_reward": modalities.SymbolModalityWeightsAll,
-        "target_action": modalities.SymbolModalityWeightsAll,
-        "target_reward": modalities.SymbolModalityWeightsAll,
-        "target_policy": modalities.IdentityModality,
-        "target_value": modalities.IdentityModality,
+        "input_action": modalities.ModalityType.SYMBOL_WEIGHTS_ALL,
+        "input_reward": modalities.ModalityType.SYMBOL_WEIGHTS_ALL,
+        "target_action": modalities.ModalityType.SYMBOL_WEIGHTS_ALL,
+        "target_reward": modalities.ModalityType.SYMBOL_WEIGHTS_ALL,
+        "target_policy": modalities.ModalityType.IDENTITY,
+        "target_value": modalities.ModalityType.IDENTITY,
     })
     defaults.vocab_size.update({
         "input_action": self.num_actions,

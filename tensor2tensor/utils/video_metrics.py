@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The Tensor2Tensor Authors.
+# Copyright 2019 The Tensor2Tensor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,6 +22,8 @@ from __future__ import print_function
 import os
 import numpy as np
 import six
+
+
 import tensorflow as tf
 
 
@@ -224,7 +226,7 @@ def compute_video_metrics_from_predictions(predictions, decode_hparams):
   Args:
     predictions: list of list of dicts.
                  outer length: num_decodes, inner_length: num_samples
-    decode_hparams: Decode hparams. instance of tf.contrib.training.HParams.
+    decode_hparams: Decode hparams. instance of HParams.
   Returns:
     statistics: dict of Tensors, key being the metric with each Tensor
                 having the shape (num_samples, num_frames).

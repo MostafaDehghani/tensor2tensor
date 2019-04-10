@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The Tensor2Tensor Authors.
+# Copyright 2019 The Tensor2Tensor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -132,7 +132,8 @@ def create_session_config(log_device_placement=False,
       gpu_options=gpu_options,
       log_device_placement=log_device_placement,
       inter_op_parallelism_threads=inter_op_parallelism_threads,
-      intra_op_parallelism_threads=intra_op_parallelism_threads)
+      intra_op_parallelism_threads=intra_op_parallelism_threads,
+      isolate_session_state=True)
   return config
 
 
@@ -685,9 +686,12 @@ def create_experiment(
       metric = eval_early_stopping_metric or "loss"
       return current_eval_result[metric] < best_eval_result[metric]
 
+    def serving_input_receiver_fn(hparams, decode_hparams, use_tpu):
+      return problem.serving_input_fn(hparams, decode_hparams, use_tpu)
+
     exporter = tf.estimator.BestExporter(
         name="best",
-        serving_input_receiver_fn=lambda: problem.serving_input_fn(hparams),
+        serving_input_receiver_fn=serving_input_receiver_fn,
         compare_fn=compare_fn,
         assets_extra=problem.export_assets)
 

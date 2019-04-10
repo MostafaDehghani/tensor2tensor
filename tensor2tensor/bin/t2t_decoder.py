@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The Tensor2Tensor Authors.
+# Copyright 2019 The Tensor2Tensor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -100,7 +100,8 @@ def decode(estimator, hparams, decode_hp):
         hparams,
         decode_hp,
         decode_to_file=FLAGS.decode_to_file,
-        dataset_split="test" if FLAGS.eval_use_test_set else None)
+        dataset_split="test" if FLAGS.eval_use_test_set else None,
+        checkpoint_path=FLAGS.checkpoint_path)
 
 
 def score_file(filename):

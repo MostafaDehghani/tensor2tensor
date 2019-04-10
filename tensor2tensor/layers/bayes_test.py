@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The Tensor2Tensor Authors.
+# Copyright 2019 The Tensor2Tensor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,16 +23,19 @@ from absl.testing import parameterized
 import numpy as np
 
 from tensor2tensor.layers import bayes
+from tensor2tensor.utils import test_utils
 
 import tensorflow as tf
+from tensorflow_probability import edward2 as ed
+tf.compat.v1.enable_eager_execution()
 
 
 class BayesTest(parameterized.TestCase, tf.test.TestCase):
 
-  @tf.contrib.eager.run_test_in_graph_and_eager_modes
+  @test_utils.run_in_graph_and_eager_modes
   def testTrainableNormalStddevConstraint(self):
     layer = bayes.DenseReparameterization(
-        100, kernel_initializer=bayes.TrainableNormal())
+        100, kernel_initializer="trainable_normal")
     inputs = tf.random_normal([1, 1])
     out = layer(inputs)
     stddev = layer.kernel.distribution.stddev()
@@ -41,14 +44,20 @@ class BayesTest(parameterized.TestCase, tf.test.TestCase):
     self.assertAllGreater(res, 0.)
 
   @parameterized.named_parameters(
-      {"testcase_name": "_no_uncertainty", "kernel_initializer": "zeros",
-       "bias_initializer": "zeros", "all_close": True},
-      {"testcase_name": "_kernel_uncertainty", "kernel_initializer": None,
-       "bias_initializer": "zeros", "all_close": False},
-      {"testcase_name": "_bias_uncertainty", "kernel_initializer": "zeros",
-       "bias_initializer": None, "all_close": False},
+      {"testcase_name": "_no_uncertainty",
+       "kernel_initializer": "zeros",
+       "bias_initializer": "zeros",
+       "all_close": True},
+      {"testcase_name": "_kernel_uncertainty",
+       "kernel_initializer": "trainable_normal",
+       "bias_initializer": "zeros",
+       "all_close": False},
+      {"testcase_name": "_bias_uncertainty",
+       "kernel_initializer": "zeros",
+       "bias_initializer": "trainable_normal",
+       "all_close": False},
   )
-  @tf.contrib.eager.run_test_in_graph_and_eager_modes
+  @test_utils.run_in_graph_and_eager_modes
   def testDenseReparameterizationKernel(
       self, kernel_initializer, bias_initializer, all_close):
     inputs = tf.to_float(np.random.rand(5, 3, 12))
@@ -67,16 +76,39 @@ class BayesTest(parameterized.TestCase, tf.test.TestCase):
       self.assertNotAllClose(res1, res2)
     layer.get_config()
 
-  @tf.contrib.eager.run_test_in_graph_and_eager_modes()
-  def testDenseReparameterizationKL(self):
-    inputs = tf.to_float(np.random.rand(5, 12))
+  @test_utils.run_in_graph_and_eager_modes
+  def testDenseReparameterizationMean(self):
+    """Tests that forward pass can use other values, e.g., posterior mean."""
+    def take_mean(f, *args, **kwargs):
+      """Sets random variable value to its mean."""
+      rv = f(*args, **kwargs)
+      rv._value = rv.distribution.mean()
+      return rv
+    inputs = tf.to_float(np.random.rand(5, 3, 7))
+    layer = bayes.DenseReparameterization(4,
+                                          activation=tf.nn.relu,
+                                          use_bias=False)
+    outputs1 = layer(inputs)
+    with ed.interception(take_mean):
+      outputs2 = layer(inputs)
+    self.evaluate(tf.global_variables_initializer())
+    res1, res2 = self.evaluate([outputs1, outputs2])
+    self.assertEqual(res1.shape, (5, 3, 4))
+    self.assertNotAllClose(res1, res2)
+    self.assertAllClose(res2, np.zeros((5, 3, 4)), atol=1e-4)
+
+  @test_utils.run_in_graph_and_eager_modes()
+  def testDenseReparameterizationLoss(self):
+    features = tf.to_float(np.random.rand(5, 12))
+    labels = tf.to_float(np.random.rand(5, 10))
     layer = bayes.DenseReparameterization(10)
 
     # Imagine this is the 1st epoch.
-    with tf.GradientTape() as tape:
-      layer(inputs)  # first call forces a build, here inside this tape
-      layer(inputs)  # ensure robustness after multiple calls
-      loss = sum(layer.losses)
+    with tf.GradientTape(persistent=True) as tape:
+      predictions = layer(features)  # first call forces build
+      layer(features)  # ensure robustness after multiple calls
+      nll = tf.losses.mean_squared_error(labels, predictions)
+      kl = sum(layer.losses)
 
     variables = [layer.kernel_initializer.mean, layer.kernel_initializer.stddev]
     for v in variables:
@@ -84,14 +116,18 @@ class BayesTest(parameterized.TestCase, tf.test.TestCase):
 
     # This will be fine, since the layer was built inside this tape, and thus
     # the distribution init ops were inside this tape.
-    grads = tape.gradient(loss, variables)
+    grads = tape.gradient(nll, variables)
+    for grad in grads:
+      self.assertIsNotNone(grad)
+    grads = tape.gradient(kl, variables)
     for grad in grads:
       self.assertIsNotNone(grad)
 
     # Imagine this is the 2nd epoch.
-    with tf.GradientTape() as tape:
-      layer(inputs)  # build won't be called again
-      loss = sum(layer.losses)
+    with tf.GradientTape(persistent=True) as tape:
+      predictions = layer(features)  # build is not called
+      nll = tf.losses.mean_squared_error(labels, predictions)
+      kl = sum(layer.losses)
 
     variables = [layer.kernel_initializer.mean, layer.kernel_initializer.stddev]
     for v in variables:
@@ -100,11 +136,14 @@ class BayesTest(parameterized.TestCase, tf.test.TestCase):
     # This would fail, since the layer was built inside the tape from the 1st
     # epoch, and thus the distribution init ops were inside that tape instead of
     # this tape. By using a callable for the variable, this will no longer fail.
-    grads = tape.gradient(loss, variables)
+    grads = tape.gradient(nll, variables)
+    for grad in grads:
+      self.assertIsNotNone(grad)
+    grads = tape.gradient(kl, variables)
     for grad in grads:
       self.assertIsNotNone(grad)
 
-  @tf.contrib.eager.run_test_in_graph_and_eager_modes()
+  @test_utils.run_in_graph_and_eager_modes()
   def testDenseReparameterizationModel(self):
     inputs = tf.to_float(np.random.rand(3, 4, 4, 1))
     model = tf.keras.Sequential([
@@ -121,7 +160,80 @@ class BayesTest(parameterized.TestCase, tf.test.TestCase):
     self.assertEqual(res.shape, (3, 2))
     self.assertLen(model.losses, 1)
 
-  @tf.contrib.eager.run_test_in_graph_and_eager_modes()
+  @test_utils.run_in_graph_and_eager_modes()
+  def testDenseReparameterizationSubclass(self):
+    class DenseReparameterizationSubclass(bayes.DenseReparameterization):
+      pass
+
+    inputs = tf.to_float(np.random.rand(3, 4, 4, 1))
+    model = tf.keras.Sequential([
+        tf.keras.layers.Conv2D(3,
+                               kernel_size=2,
+                               padding="SAME",
+                               activation=tf.nn.relu),
+        tf.keras.layers.Flatten(),
+        DenseReparameterizationSubclass(2, activation=None),
+    ])
+    outputs = model(inputs)
+    self.evaluate(tf.global_variables_initializer())
+    res = self.evaluate(outputs)
+    self.assertEqual(res.shape, (3, 2))
+    self.assertLen(model.losses, 1)
+
+  @parameterized.named_parameters(
+      {"testcase_name": "_no_uncertainty",
+       "kernel_initializer": "zeros",
+       "bias_initializer": "zeros",
+       "all_close": True},
+      {"testcase_name": "_kernel_uncertainty",
+       "kernel_initializer": "trainable_normal",
+       "bias_initializer": "zeros",
+       "all_close": False},
+      {"testcase_name": "_bias_uncertainty",
+       "kernel_initializer": "zeros",
+       "bias_initializer": "trainable_normal",
+       "all_close": False},
+  )
+  @test_utils.run_in_graph_and_eager_modes
+  def testConv2DReparameterizationKernel(
+      self, kernel_initializer, bias_initializer, all_close):
+    inputs = tf.to_float(np.random.rand(5, 4, 4, 12))
+    layer = bayes.Conv2DReparameterization(
+        4,
+        kernel_size=2,
+        kernel_initializer=kernel_initializer,
+        bias_initializer=bias_initializer,
+        activation=tf.nn.relu)
+    outputs1 = layer(inputs)
+    outputs2 = layer(inputs)
+    self.evaluate(tf.global_variables_initializer())
+    res1, res2 = self.evaluate([outputs1, outputs2])
+    self.assertEqual(res1.shape, (5, 3, 3, 4))
+    self.assertAllGreaterEqual(res1, 0.)
+    if all_close:
+      self.assertAllClose(res1, res2)
+    else:
+      self.assertNotAllClose(res1, res2)
+    layer.get_config()
+
+  @test_utils.run_in_graph_and_eager_modes()
+  def testConv2DReparameterizationModel(self):
+    inputs = tf.to_float(np.random.rand(3, 4, 4, 1))
+    model = tf.keras.Sequential([
+        bayes.Conv2DReparameterization(3,
+                                       kernel_size=2,
+                                       padding="SAME",
+                                       activation=tf.nn.relu),
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dense(2, activation=None),
+    ])
+    outputs = model(inputs)
+    self.evaluate(tf.global_variables_initializer())
+    res = self.evaluate(outputs)
+    self.assertEqual(res.shape, (3, 2))
+    self.assertLen(model.losses, 1)
+
+  @test_utils.run_in_graph_and_eager_modes()
   def testGaussianProcessPosterior(self):
     train_batch_size = 3
     test_batch_size = 2
@@ -142,7 +254,7 @@ class BayesTest(parameterized.TestCase, tf.test.TestCase):
     self.assertGreaterEqual(test_nats_val, 0.)
     self.assertEqual(outputs_val.shape, (test_batch_size, output_dim))
 
-  @tf.contrib.eager.run_test_in_graph_and_eager_modes()
+  @test_utils.run_in_graph_and_eager_modes()
   def testGaussianProcessPrior(self):
     batch_size = 3
     input_dim = 4
@@ -162,20 +274,28 @@ class BayesTest(parameterized.TestCase, tf.test.TestCase):
     self.assertEqual(outputs_val.shape, (batch_size, output_dim))
 
   @parameterized.named_parameters(
-      {"testcase_name": "_no_uncertainty", "kernel_initializer": "zeros",
-       "recurrent_initializer": "orthogonal", "bias_initializer": "zeros",
+      {"testcase_name": "_no_uncertainty",
+       "kernel_initializer": "zeros",
+       "recurrent_initializer": "orthogonal",
+       "bias_initializer": "zeros",
        "all_close": True},
-      {"testcase_name": "_kernel_uncertainty", "kernel_initializer": None,
-       "recurrent_initializer": "orthogonal", "bias_initializer": "zeros",
+      {"testcase_name": "_kernel_uncertainty",
+       "kernel_initializer": "trainable_normal",
+       "recurrent_initializer": "orthogonal",
+       "bias_initializer": "zeros",
        "all_close": False},
-      {"testcase_name": "_recurrent_uncertainty", "kernel_initializer": "zeros",
-       "recurrent_initializer": None, "bias_initializer": "zeros",
+      {"testcase_name": "_recurrent_uncertainty",
+       "kernel_initializer": "zeros",
+       "recurrent_initializer": "trainable_normal",
+       "bias_initializer": "zeros",
        "all_close": False},
-      {"testcase_name": "_bias_uncertainty", "kernel_initializer": "zeros",
-       "recurrent_initializer": "orthogonal", "bias_initializer": None,
+      {"testcase_name": "_bias_uncertainty",
+       "kernel_initializer": "zeros",
+       "recurrent_initializer": "orthogonal",
+       "bias_initializer": "trainable_normal",
        "all_close": False},
   )
-  @tf.contrib.eager.run_test_in_graph_and_eager_modes
+  @test_utils.run_in_graph_and_eager_modes
   def testLSTMCellReparameterization(
       self, kernel_initializer, recurrent_initializer, bias_initializer,
       all_close):
@@ -191,7 +311,7 @@ class BayesTest(parameterized.TestCase, tf.test.TestCase):
     state = (h0 + noise, c0)
     outputs1, _ = cell(inputs[:, 0, :], state)
     outputs2, _ = cell(inputs[:, 0, :], state)
-    cell.sample_weights()
+    cell.call_weights()
     outputs3, _ = cell(inputs[:, 0, :], state)
     self.evaluate(tf.global_variables_initializer())
     res1, res2, res3 = self.evaluate([outputs1, outputs2, outputs3])
@@ -203,19 +323,21 @@ class BayesTest(parameterized.TestCase, tf.test.TestCase):
       self.assertNotAllClose(res1, res3)
     cell.get_config()
 
-  @tf.contrib.eager.run_test_in_graph_and_eager_modes()
-  def testLSTMCellReparameterizationKL(self):
-    inputs = tf.to_float(np.random.rand(5, 1, 12))
+  @test_utils.run_in_graph_and_eager_modes()
+  def testLSTMCellReparameterizationLoss(self):
+    features = tf.to_float(np.random.rand(5, 1, 12))
+    labels = tf.to_float(np.random.rand(5, 10))
     cell = bayes.LSTMCellReparameterization(10)
     state = (tf.zeros([1, 10]), tf.zeros([1, 10]))
 
     # Imagine this is the 1st epoch.
-    with tf.GradientTape() as tape:
-      cell(inputs[:, 0, :], state)  # first call forces a build, inside the tape
-      cell(inputs[:, 0, :], state)  # ensure robustness after multiple calls
-      cell.get_initial_state(inputs[:, 0, :])
-      cell(inputs[:, 0, :], state)  # ensure robustness after multiple calls
-      loss = sum(cell.losses)
+    with tf.GradientTape(persistent=True) as tape:
+      predictions, _ = cell(features[:, 0, :], state)  # first call forces build
+      cell(features[:, 0, :], state)  # ensure robustness after multiple calls
+      cell.get_initial_state(features[:, 0, :])
+      cell(features[:, 0, :], state)  # ensure robustness after multiple calls
+      nll = tf.losses.mean_squared_error(labels, predictions)
+      kl = sum(cell.losses)
 
     variables = [
         cell.kernel_initializer.mean, cell.kernel_initializer.stddev,
@@ -226,14 +348,19 @@ class BayesTest(parameterized.TestCase, tf.test.TestCase):
 
     # This will be fine, since the layer was built inside this tape, and thus
     # the distribution init ops were inside this tape.
-    grads = tape.gradient(loss, variables)
+    grads = tape.gradient(nll, variables)
+    for grad in grads:
+      self.assertIsNotNone(grad)
+    grads = tape.gradient(kl, variables)
     for grad in grads:
       self.assertIsNotNone(grad)
 
     # Imagine this is the 2nd epoch.
-    with tf.GradientTape() as tape:
-      cell(inputs[:, 0, :], state)  # build won't be called again
-      loss = sum(cell.losses)
+    with tf.GradientTape(persistent=True) as tape:
+      cell.get_initial_state(features[:, 0, :])
+      predictions, _ = cell(features[:, 0, :], state)  # build is not called
+      nll = tf.losses.mean_squared_error(labels, predictions)
+      kl = sum(cell.losses)
 
     variables = [
         cell.kernel_initializer.mean, cell.kernel_initializer.stddev,
@@ -245,11 +372,14 @@ class BayesTest(parameterized.TestCase, tf.test.TestCase):
     # This would fail, since the layer was built inside the tape from the 1st
     # epoch, and thus the distribution init ops were inside that tape instead of
     # this tape. By using a callable for the variable, this will no longer fail.
-    grads = tape.gradient(loss, variables)
+    grads = tape.gradient(nll, variables)
+    for grad in grads:
+      self.assertIsNotNone(grad)
+    grads = tape.gradient(kl, variables)
     for grad in grads:
       self.assertIsNotNone(grad)
 
-  @tf.contrib.eager.run_test_in_graph_and_eager_modes()
+  @test_utils.run_in_graph_and_eager_modes()
   def testLSTMCellReparameterizationModel(self):
     batch_size, timesteps, dim = 5, 3, 12
     hidden_size = 10
@@ -270,16 +400,16 @@ class BayesTest(parameterized.TestCase, tf.test.TestCase):
     res1, res2, res3 = self.evaluate([outputs1, outputs2, outputs3])
     self.assertEqual(res1.shape, (batch_size, timesteps, hidden_size))
     self.assertEqual(res3.shape, (batch_size, timesteps, hidden_size))
-    # NOTE: `cell.sample_weights` should have been called at the beginning of
+    # NOTE: `cell.call_weights` should have been called at the beginning of
     # each call, so these should be different.
     self.assertNotAllClose(res1, res2)
-    # NOTE: We didn't call `cell.sample_weights` again before computing
+    # NOTE: We didn't call `cell.call_weights` again before computing
     # `outputs3`, so the cell should have had the same weights as it did during
     # computation of `outputs2`, and thus yielded the same output tensor.
     self.assertAllClose(res2, res3)
     self.assertLen(model.losses, 2)
 
-  @tf.contrib.eager.run_test_in_graph_and_eager_modes()
+  @test_utils.run_in_graph_and_eager_modes()
   def testBayesianLinearModel(self):
     """Tests that model makes reasonable predictions."""
     np.random.seed(42)
@@ -310,7 +440,7 @@ class BayesTest(parameterized.TestCase, tf.test.TestCase):
     self.assertAllClose(test_predictions_val, test_labels_val, atol=0.1)
     self.assertAllLessEqual(test_predictions_variance_val, noise_variance)
 
-  @tf.contrib.eager.run_test_in_graph_and_eager_modes()
+  @test_utils.run_in_graph_and_eager_modes()
   def testMixtureLogistic(self):
     batch_size = 3
     features = tf.to_float(np.random.rand(batch_size, 4))

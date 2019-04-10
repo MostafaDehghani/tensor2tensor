@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The Tensor2Tensor Authors.
+# Copyright 2019 The Tensor2Tensor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -128,7 +128,7 @@ class SariHookTest(tf.test.TestCase):
 
   def testSariScoreE2E(self):
     """Tests the SARI metrics end-to-end."""
-    predictions = np.random.randint(4, size=(12, 12, 1, 12))
+    predictions = np.random.randint(4, size=(12, 12, 1, 1, 12))
     targets = np.random.randint(4, size=(12, 12, 1, 1))
     inputs = np.random.randint(4, size=(12, 12, 1, 1))
     with self.test_session() as session:
