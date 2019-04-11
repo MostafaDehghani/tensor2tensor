@@ -825,6 +825,13 @@ def stacked_universal_transformer_with_function_adaptation_binary_base():
   return hparams
 
 @registry.register_hparams
+def stacked_universal_transformer_with_function_adaptation_softbinary_base():
+  hparams = stacked_universal_transformer_base()
+  hparams.function_adaptation = "binary"
+  hparams.straight_through = False
+  return hparams
+
+@registry.register_hparams
 def stacked_universal_transformer_tiny():
   hparams = universal_transformer_tiny()
   hparams.num_stacked_universal_transformers = 2

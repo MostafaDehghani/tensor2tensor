@@ -433,9 +433,9 @@ def get_stacked_ut_layer(x,
         preprocess=True)
 
     # Assuming the class 0 as "skip" and class 1 as "go though"
-    x = (original_x * skip_or_go_through_gate[:,:,0] +
-         x * skip_or_go_through_gate[:,:,1])
-
+    x = (original_x * tf.expand_dims(skip_or_go_through_gate[:,:,0], 1) +
+         x * tf.expand_dims(skip_or_go_through_gate[:,:,1], 1))
+  
     tf.contrib.summary.histogram("sut_skip_or_go_through_gate",
                                  skip_or_go_through_gate)
   else:
