@@ -215,14 +215,10 @@ def universal_transformer_layer(x,
   assert hparams.num_stacked_universal_transformers >= 1
 
   if hparams.num_stacked_universal_transformers == 1:
-    # TODO(dehghani) remove this:
-    print("we are going to have a single universal transformer")
     return universal_transformer_layer_single(
         x,hparams,ffn_unit,attention_unit,pad_remover)
 
   else:
-    # TODO(dehghani) remove this:
-    print("we are going to have a stack of universal transformer")
     return universal_transformer_layer_stacked(
         x,hparams,ffn_unit,attention_unit,pad_remover)
 
@@ -330,16 +326,13 @@ def universal_transformer_layer_stacked(x,
   with tf.variable_scope("stacked_universal_transformer"):
 
     extra_outputs = []
-
-    # TODO(dehghani) remove this:
-    tf.logging.info("we are using hparams.num_stacked_universal_transformers = %d"
-                    %hparams.num_stacked_universal_transformers)
-    print("we are using hparams.num_stacked_universal_transformers = %d"
+    tf.logging.info("Using a stacked of  %d universal transformer layers"
                     %hparams.num_stacked_universal_transformers)
 
     for layer_cnt in range(hparams.num_stacked_universal_transformers):
       # TODO(dehghani) remove this:
       print("we are in the %d loop" %layer_cnt)
+      tf.logging.info("we are in the %d loop" %layer_cnt)
 
       with tf.variable_scope("universal_transformer_layer_%d" % layer_cnt):
         x, extra_output = get_stacked_ut_layer(
@@ -371,14 +364,10 @@ def get_stacked_ut_layer(x,
   """
 
   if hparams.function_adaptation is None:
-    # TODO(dehghani) remove this:
-    print("we are going to go to no func. adaptation")
     x, extra_output = universal_transformer_layer_single(
       x, hparams, ffn_unit, attention_unit, pad_remover)
 
   elif hparams.function_adaptation == "highway":
-    # TODO(dehghani) remove this:
-    print("we are going to go to func. adaptation with  highway gate")
     original_x = x
     gate_inputs = [x]
 
@@ -424,8 +413,6 @@ def get_stacked_ut_layer(x,
                                  carry_gate)
 
   elif hparams.function_adaptation == "binary":
-    # TODO(dehghani) remove this:
-    print("we are going to go to func. adaptation with binary gate")
     original_x = x
     gate_inputs = [x]
 
@@ -1439,7 +1426,6 @@ def _binary_gate_with_gumbel_softmax(inputs_list,
                                    pad_remover=pad_remover,
                                    preprocess=preprocess)
 
-
   output = gumbel_softmax(logits,
                          gumbel_noise_factor=gumbel_noise_factor,
                          temperature=softmax_temperature,
@@ -1448,11 +1434,9 @@ def _binary_gate_with_gumbel_softmax(inputs_list,
                          straight_through=straight_through,
                          name = "gumbel_softmax_" + "name")
 
-
   if not per_position:
-    # extend the global decision to all positions
-    tf.expand_dims(output, -1)
-
+    # extend the globally made decision to all the positions
+    output = tf.expand_dims(output, 1)
   return output
 
 
@@ -1790,6 +1774,6 @@ def gumbel_softmax(logits,
 
     if straight_through:
       # Calculate the argmax and construct hot vectors.
-      y_hard = tf.cast(tf.equal(y,tf.reduce_max(y,1,keep_dims=True)),y.dtype)
+      y_hard = tf.cast(tf.equal(y,tf.reduce_max(y,1,keepdims=True)),y.dtype)
       y = tf.stop_gradient(y_hard - y) + y
   return y
