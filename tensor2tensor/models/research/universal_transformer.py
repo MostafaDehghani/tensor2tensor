@@ -362,17 +362,6 @@ def update_hparams_for_universal_transformer(hparams):
   """
   hparams.daisy_chain_variables = False  # Breaks multi-gpu in while loops.
 
-  # Stack of UT's (with different parameters)
-  hparams.add_hparam("multi_universal_transformer", False)
-
-  # Number of stacked UTs in  multi_universal_transformer.
-  hparams.add_hparam("num_universal_transformers", 1)
-
-  # Type of the stack of  UTs in  multi_universal_transformer:
-  # basic, highway
-  hparams.add_hparam("multi_ut_stack_type", "basic")
-
-
   # If not None, mixes vanilla transformer with Universal Transformer.
   # Options: None, "before_ut", and "after_ut".
   hparams.add_hparam("mix_with_transformer", None)
@@ -443,6 +432,24 @@ def update_hparams_for_universal_transformer(hparams):
   hparams.add_hparam("act_halting_bias_init", 1.0)
   hparams.add_hparam("act_epsilon", 0.01)
   hparams.add_hparam("act_loss_weight", 0.01)
+
+  # Number of stacked UTs in  stacked_universal_transformer.
+  hparams.add_hparam("num_stacked_universal_transformers", 1)
+
+  # Function adaptaion (in case of num_stacked_universal_transformers > 1)
+  # None (no adaptation), highway (highway gate around UTs),
+  # binary (binary gate around ut)
+  hparams.add_hparam("function_adaptation", None)
+
+  # apply function adaption per position
+  hparams.add_hparam("per_position_function_adaptation", False)
+
+  # hparams of the binary gate with gumbel softmax
+  hparams.add_hparam("gumbel_noise_factor", 0.9)
+  hparams.add_hparam("softmax_temperature", 0.5)
+  hparams.add_hparam("temperature_warmup_steps", 150000)
+  hparams.add_hparam("learn_softmax_temp", False)
+  hparams.add_hparam("straight_through", True)
 
   return hparams
 
@@ -800,40 +807,42 @@ def universal_transformer_sepconv_base():
 def stacked_universal_transformer_base():
   hparams = transformer.transformer_base()
   hparams = update_hparams_for_universal_transformer(hparams)
-  hparams.multi_universal_transformer = True
-  hparams.num_universal_transformers = 6
-  hparams.multi_ut_stack_type = "basic"
+  hparams.num_stacked_universal_transformers = 6
+  hparams.num_rec_steps = 4
   return hparams
 
 
 @registry.register_hparams
-def stacked_universal_transformer_highway():
-  hparams = transformer.transformer_base()
-  hparams = update_hparams_for_universal_transformer(hparams)
-  hparams.multi_universal_transformer = True
-  hparams.num_universal_transformers = 6
-  hparams.multi_ut_stack_type = "highway"
+def stacked_universal_transformer_with_function_adaptation_highway_base():
+  hparams = stacked_universal_transformer_base()
+  hparams.function_adaptation = "highway"
   return hparams
 
+@registry.register_hparams
+def stacked_universal_transformer_with_function_adaptation_binary_base():
+  hparams = stacked_universal_transformer_base()
+  hparams.function_adaptation = "binary"
+  return hparams
 
 @registry.register_hparams
 def stacked_universal_transformer_tiny():
   hparams = universal_transformer_tiny()
-  hparams.multi_universal_transformer = True
-  hparams.num_rec_steps = 4
-  hparams.num_universal_transformers = 2
-  hparams.multi_ut_stack_type = "basic"
+  hparams.num_stacked_universal_transformers = 2
+  hparams.num_rec_steps = 3
   return hparams
-
 
 @registry.register_hparams
-def stacked_universal_transformer_highway_tiny():
-  hparams = universal_transformer_tiny()
-  hparams.multi_universal_transformer = True
-  hparams.num_rec_steps = 4
-  hparams.num_universal_transformers = 2
-  hparams.multi_ut_stack_type = "highway"
+def stacked_universal_transformer_with_function_adaptation_highway_tiny():
+  hparams = stacked_universal_transformer_tiny()
+  hparams.function_adaptation = "highway"
   return hparams
+
+@registry.register_hparams
+def stacked_universal_transformer_with_function_adaptation_binary_tiny():
+  hparams = stacked_universal_transformer_tiny()
+  hparams.function_adaptation = "binary"
+  return hparams
+
 
 @registry.register_ranged_hparams
 def universal_transformer_base_range(rhp):

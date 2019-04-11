@@ -37,7 +37,7 @@ around each of these function blocks and apply dropout and layer normalization.
 The recurrent transition function in fact controls how steps communicate with
 each other in depth. For instance, the recurrent transition, can be a simple
 identity function which passes the output of a step as the input to next step.
-Or it can be an LSTM (filliped vertically) next to the transformer which
+Or it can be an LSTM (flipped vertically) next to the transformer which
 controls how state of the model changes in depth.
 
 """
@@ -55,6 +55,7 @@ from tensor2tensor.layers import common_attention
 from tensor2tensor.layers import common_layers
 from tensor2tensor.models import transformer
 from tensor2tensor.utils import expert_utils
+from tensor2tensor.layers import discretization
 
 import tensorflow as tf
 
@@ -211,25 +212,28 @@ def universal_transformer_layer(x,
   Raises:
     ValueError: Unknown recurrence type
   """
+  assert hparams.num_stacked_universal_transformers >= 1
 
-  if hparams.multi_universal_transformer:
-    print("we are going to have a  multi universal transformer")
-    return multi_universal_transformer_layer(
+  if hparams.num_stacked_universal_transformers == 1:
+    # TODO(dehghani) remove this:
+    print("we are going to have a single universal transformer")
+    return universal_transformer_layer_single(
         x,hparams,ffn_unit,attention_unit,pad_remover)
 
   else:
-    print("we are going to have a single universal transformer")
-    return singl_universal_transformer_layer(
+    # TODO(dehghani) remove this:
+    print("we are going to have a stack of universal transformer")
+    return universal_transformer_layer_stacked(
         x,hparams,ffn_unit,attention_unit,pad_remover)
 
 
 
 
-def singl_universal_transformer_layer(x,
-                                hparams,
-                                ffn_unit,
-                                attention_unit,
-                                pad_remover=None):
+def universal_transformer_layer_single(x,
+                                       hparams,
+                                       ffn_unit,
+                                       attention_unit,
+                                       pad_remover=None):
   """A single universal transformer layer.
 
   Args:
@@ -299,12 +303,12 @@ def singl_universal_transformer_layer(x,
     return output, extra_output
 
 
-def multi_universal_transformer_layer(x,
-                                hparams,
-                                ffn_unit,
-                                attention_unit,
-                                pad_remover=None):
-  """A multi universal transformer layer.
+def universal_transformer_layer_stacked(x,
+                                        hparams,
+                                        ffn_unit,
+                                        attention_unit,
+                                        pad_remover=None):
+  """A stack of universal transformer layer.
 
   Args:
     x: input
@@ -323,27 +327,34 @@ def multi_universal_transformer_layer(x,
   def aggrigate_uts_extra_outputs(extra_outputs):
     return sum(extra_outputs)
 
-  with tf.variable_scope(
-      "multi_universal_transformer_%s" % hparams.multi_ut_stack_type):
+  with tf.variable_scope("stacked_universal_transformer"):
+
     extra_outputs = []
-    tf.logging.info("we are: hparams.num_universal_transformers = %d" %hparams.num_universal_transformers)
-    for ut in range(hparams.num_universal_transformers):
-    # for ut in range(6):
-      print("we are in the %d loop" %ut)
-      with tf.variable_scope("universal_transformer_%d" % ut):
-        x, extra_output = get_multi_ut_layer(
+
+    # TODO(dehghani) remove this:
+    tf.logging.info("we are using hparams.num_stacked_universal_transformers = %d"
+                    %hparams.num_stacked_universal_transformers)
+    print("we are using hparams.num_stacked_universal_transformers = %d"
+                    %hparams.num_stacked_universal_transformers)
+
+    for layer_cnt in range(hparams.num_stacked_universal_transformers):
+      # TODO(dehghani) remove this:
+      print("we are in the %d loop" %layer_cnt)
+
+      with tf.variable_scope("universal_transformer_layer_%d" % layer_cnt):
+        x, extra_output = get_stacked_ut_layer(
           x, hparams, ffn_unit, attention_unit, pad_remover)
         extra_outputs.append(extra_output)
 
   return x, aggrigate_uts_extra_outputs(extra_outputs)
 
 
-def get_multi_ut_layer(x,
+def get_stacked_ut_layer(x,
                  hparams,
                  ffn_unit,
                  attention_unit,
                  pad_remover=None):
-  """Provides a UT as one layer of a multi universal transforemr.
+  """Provides a UT as one layer of a stacked universal transforemr.
 
   Args:
     x: input
@@ -359,18 +370,19 @@ def get_multi_ut_layer(x,
     ValueError: Unknown recurrence type
   """
 
-  # print("we are in get_multi_ut_layer")
-
-  if hparams.multi_ut_stack_type == "basic":
-    x, extra_output = singl_universal_transformer_layer(
+  if hparams.function_adaptation is None:
+    # TODO(dehghani) remove this:
+    print("we are going to go to no func. adaptation")
+    x, extra_output = universal_transformer_layer_single(
       x, hparams, ffn_unit, attention_unit, pad_remover)
 
-  elif hparams.multi_ut_stack_type == "highway":
-    print("we are going to go to highway mut")
+  elif hparams.function_adaptation == "highway":
+    # TODO(dehghani) remove this:
+    print("we are going to go to func. adaptation with  highway gate")
     original_x = x
     gate_inputs = [x]
 
-    x, extra_output = singl_universal_transformer_layer(
+    x, extra_output = universal_transformer_layer_single(
       x, hparams, ffn_unit, attention_unit, pad_remover)
 
     transform_gate = _ffn_layer_multi_inputs(
@@ -381,8 +393,7 @@ def get_multi_ut_layer(x,
       bias_initializer=tf.constant_initializer(hparams.transform_bias_init),
       activation=tf.sigmoid,
       pad_remover=pad_remover,
-      preprocess=True,
-      postprocess=True)
+      preprocess=True)
 
     if hparams.couple_carry_transform_gates:
       carry_gate = tf.subtract(1.0, transform_gate, name="carry")
@@ -396,26 +407,53 @@ def get_multi_ut_layer(x,
         bias_initializer=tf.constant_initializer(-hparams.transform_bias_init),
         activation=tf.sigmoid,
         pad_remover=pad_remover,
-        preprocess=True,
-        postprocess=True)
+        preprocess=True)
 
     x = original_x * carry_gate + x * transform_gate
 
-    tf.contrib.summary.histogram("mut_highway_mean_transform_gate_layer",
+    tf.contrib.summary.histogram("sut_highway_mean_transform_gate_layer",
                               tf.reduce_mean(transform_gate))
 
-    tf.contrib.summary.histogram("mut_highway_mean_carry_gate_layer",
+    tf.contrib.summary.histogram("sut_highway_mean_carry_gate_layer",
                               tf.reduce_mean(carry_gate))
 
-    tf.contrib.summary.histogram("mut_highway_transform_gate_layer",
+    tf.contrib.summary.histogram("sut_highway_transform_gate_layer",
                                  transform_gate)
 
-    tf.contrib.summary.histogram("mut_highway_carry_gate_layer",
+    tf.contrib.summary.histogram("sut_highway_carry_gate_layer",
                                  carry_gate)
 
+  elif hparams.function_adaptation == "binary":
+    # TODO(dehghani) remove this:
+    print("we are going to go to func. adaptation with binary gate")
+    original_x = x
+    gate_inputs = [x]
+
+    x, extra_output = universal_transformer_layer_single(
+      x, hparams, ffn_unit, attention_unit, pad_remover)
+
+    skip_or_go_through_gate = _binary_gate_with_gumbel_softmax(
+        gate_inputs,
+        hparams,
+        per_position=hparams.per_position_function_adaptation,
+        gumbel_noise_factor=hparams.gumbel_noise_factor,
+        softmax_temperature=hparams.softmax_temperature,
+        temperature_warmup_steps=hparams.temperature_warmup_steps,
+        learn_softmax_temp=hparams.learn_softmax_temp,
+        straight_through=hparams.straight_through,
+        name="adaptive_function_binary_gate",
+        pad_remover=pad_remover,
+        preprocess=True)
+
+    # Assuming the class 0 as "skip" and class 1 as "go though"
+    x = (original_x * skip_or_go_through_gate[:,:,0] +
+         x * skip_or_go_through_gate[:,:,1])
+
+    tf.contrib.summary.histogram("sut_skip_or_go_through_gate",
+                                 skip_or_go_through_gate)
   else:
     raise ValueError(
-      "Unknown multi-ut stack type: %s" % hparams.multi_ut_stack_type)
+      "Unknown function adaptation type: %s" % hparams.function_adaptation)
 
   return x, extra_output
 
@@ -808,8 +846,7 @@ def universal_transformer_highway(layer_inputs,
       bias_initializer=tf.constant_initializer(hparams.transform_bias_init),
       activation=tf.sigmoid,
       pad_remover=pad_remover,
-      preprocess=True,
-      postprocess=True)
+      preprocess=True)
 
   if hparams.couple_carry_transform_gates:
     carry_gate = tf.subtract(1.0, transform_gate, name="carry")
@@ -823,8 +860,7 @@ def universal_transformer_highway(layer_inputs,
         bias_initializer=tf.constant_initializer(-hparams.transform_bias_init),
         activation=tf.sigmoid,
         pad_remover=pad_remover,
-        preprocess=True,
-        postprocess=True)
+        preprocess=True)
 
   new_state = state * carry_gate + transformed_state * transform_gate
 
@@ -902,8 +938,7 @@ def universal_transformer_skip(layer_inputs,
       bias_initializer=tf.constant_initializer(hparams.transform_bias_init),
       activation=tf.sigmoid,
       pad_remover=pad_remover,
-      preprocess=True,
-      postprocess=True)
+      preprocess=True)
 
   if hparams.couple_carry_transform_gates:
     carry_gate = tf.subtract(1.0, transform_gate, name="carry")
@@ -917,8 +952,7 @@ def universal_transformer_skip(layer_inputs,
         bias_initializer=tf.constant_initializer(-hparams.transform_bias_init),
         activation=tf.sigmoid,
         pad_remover=pad_remover,
-        preprocess=True,
-        postprocess=True)
+        preprocess=True)
 
   tf.contrib.summary.scalar("skip_transform_gate_layer",
                             tf.reduce_mean(transform_gate))
@@ -1036,9 +1070,7 @@ def universal_transformer_with_gru_as_transition_function(
         name="update",
         bias_initializer=tf.constant_initializer(1.0),
         activation=tf.sigmoid,
-        pad_remover=pad_remover,
-        preprocess=False,
-        postprocess=False)
+        pad_remover=pad_remover)
 
     tf.contrib.summary.scalar("gru_update_gate",
                               tf.reduce_mean(transition_function_update_gate))
@@ -1050,9 +1082,7 @@ def universal_transformer_with_gru_as_transition_function(
         name="reset",
         bias_initializer=tf.constant_initializer(1.0),
         activation=tf.sigmoid,
-        pad_remover=pad_remover,
-        preprocess=False,
-        postprocess=False)
+        pad_remover=pad_remover)
 
     tf.contrib.summary.scalar("gru_reset_gate",
                               tf.reduce_mean(transition_function_reset_gate))
@@ -1065,9 +1095,7 @@ def universal_transformer_with_gru_as_transition_function(
         name="candidate",
         bias_initializer=tf.zeros_initializer(),
         activation=tf.tanh,
-        pad_remover=pad_remover,
-        preprocess=False,
-        postprocess=False)
+        pad_remover=pad_remover)
 
     transition_function_output = (
         (1 - transition_function_update_gate) * transition_function_input +
@@ -1130,9 +1158,7 @@ def universal_transformer_with_lstm_as_transition_function(
         name="input",
         bias_initializer=tf.zeros_initializer(),
         activation=tf.sigmoid,
-        pad_remover=pad_remover,
-        preprocess=False,
-        postprocess=False)
+        pad_remover=pad_remover)
 
     tf.contrib.summary.scalar("lstm_input_gate",
                               tf.reduce_mean(transition_function_input_gate))
@@ -1144,9 +1170,7 @@ def universal_transformer_with_lstm_as_transition_function(
         name="forget",
         bias_initializer=tf.zeros_initializer(),
         activation=None,
-        pad_remover=pad_remover,
-        preprocess=False,
-        postprocess=False)
+        pad_remover=pad_remover)
     forget_bias_tensor = tf.constant(hparams.lstm_forget_bias)
     transition_function_forget_gate = tf.sigmoid(
         transition_function_forget_gate + forget_bias_tensor)
@@ -1161,9 +1185,7 @@ def universal_transformer_with_lstm_as_transition_function(
         name="output",
         bias_initializer=tf.zeros_initializer(),
         activation=tf.sigmoid,
-        pad_remover=pad_remover,
-        preprocess=False,
-        postprocess=False)
+        pad_remover=pad_remover)
 
     tf.contrib.summary.scalar("lstm_output_gate",
                               tf.reduce_mean(transition_function_output_gate))
@@ -1175,9 +1197,7 @@ def universal_transformer_with_lstm_as_transition_function(
         name="input_modulation",
         bias_initializer=tf.zeros_initializer(),
         activation=tf.tanh,
-        pad_remover=pad_remover,
-        preprocess=False,
-        postprocess=False)
+        pad_remover=pad_remover)
 
     transition_function_memory = (
         memory * transition_function_forget_gate +
@@ -1367,8 +1387,79 @@ def universal_transformer_act(x, hparams, ffn_unit, attention_unit):
   return new_state, (ponder_times, remainders)
 
 
+
+def _binary_gate_with_gumbel_softmax(inputs_list,
+                  hparams,
+                  per_position = False,
+                  gumbel_noise_factor=None,
+                  softmax_temperature=None,
+                  temperature_warmup_steps=None,
+                  learn_softmax_temp=None,
+                  straight_through=None,
+                  name="binary_gate_ffn",
+                  pad_remover=None,
+                  preprocess=False):
+
+  """Implements a binary gate.
+
+  It is in fact is a feed-forward layer followed by gumbel softmax which can
+  be either hard (with straight-through-estimate) or soft.
+
+  Args:
+    inputs_list: list of input tensors
+    hparams: hyper-parameters
+    per_position: if true make decisions per positions, else for the whole input
+    name: name
+    pad_remover: pad remover
+    preprocess: if preprocess the input
+
+  Returns:
+    a tensor
+  Raises:
+    ValueError: Unknown ffn_layer type.
+
+  """
+
+  if not per_position:
+    for i, inputs_pos in enumerate(inputs_list):
+      # average over all positions
+      inputs = tf.reduce_mean(inputs_pos, axis=1)
+      # inputs = tf.squeeze(inputs)
+      inputs_list[i] = inputs
+
+    # pads are gone with the reduce_mean over positions
+    pad_remover = None
+
+  logits = _ffn_layer_multi_inputs(inputs_list,
+                                   hparams,
+                                   output_size=2, #binary
+                                   ffn_layer_type="dense",
+                                   name=name,
+                                   activation=None,
+                                   pad_remover=pad_remover,
+                                   preprocess=preprocess)
+
+
+  output = gumbel_softmax(logits,
+                         gumbel_noise_factor=gumbel_noise_factor,
+                         temperature=softmax_temperature,
+                         temperature_warmup_steps=temperature_warmup_steps,
+                         learn_temp= learn_softmax_temp,
+                         straight_through=straight_through,
+                         name = "gumbel_softmax_" + "name")
+
+
+  if not per_position:
+    # extend the global decision to all positions
+    tf.expand_dims(output, -1)
+
+  return output
+
+
+
 def _ffn_layer_multi_inputs(inputs_list,
                             hparams,
+                            output_size=None,
                             ffn_layer_type="dense",
                             name="ffn",
                             kernel_initializer=None,
@@ -1388,8 +1479,8 @@ def _ffn_layer_multi_inputs(inputs_list,
     bias_initializer: bias initializer
     activation: activation function
     pad_remover: pad remover
-    preprocess: if preprocess the input
-    postprocess: if postprocess the output
+    preprocess: if preprocess the input --> default: layer-norm
+    postprocess: if postprocess the output --> default: drop-out and residual
 
   Returns:
     a tensor
@@ -1402,10 +1493,13 @@ def _ffn_layer_multi_inputs(inputs_list,
   num_inputs = len(inputs_list)
   assert num_inputs > 0
 
-  if preprocess and num_inputs == 1:
-    inputs_list[0] = common_layers.layer_preprocess(inputs_list[0], hparams)
+  if preprocess:
+    # If having more than one input to the ffn,
+    # we just apply layer norm on them independently as preprocessing
+    for i, inputs in enumerate(inputs_list):
+      inputs_list[i] = common_layers.layer_preprocess(inputs_list[i], hparams)
 
-  if postprocess:
+  if postprocess and num_inputs == 1: # for the residual connection
     original_inputs = inputs_list[0]
 
   # the output size is the hidden size of the main inputs
@@ -1435,7 +1529,7 @@ def _ffn_layer_multi_inputs(inputs_list,
   if ffn_layer_type == "dense":
     output = common_layers.dense(
         ffn_inputs,
-        hparams.hidden_size,
+        hparams.hidden_size if output_size is None else output_size,
         name=name,
         activation=activation,
         use_bias=True,
@@ -1445,7 +1539,7 @@ def _ffn_layer_multi_inputs(inputs_list,
   elif ffn_layer_type == "dense_dropconnect":
     output = common_layers.dense_dropconnect(
         ffn_inputs,
-        hparams.hidden_size,
+        hparams.hidden_size if output_size is None else output_size,
         name=name,
         dropconnect_dropout=hparams.dropconnect_dropout,
         output_activation=activation)
@@ -1455,7 +1549,7 @@ def _ffn_layer_multi_inputs(inputs_list,
     output = common_layers.dense_relu_dense(
         ffn_inputs,
         hparams.filter_size,
-        hparams.hidden_size,
+        hparams.hidden_size if output_size is None else output_size,
         name=name,
         dropout=hparams.relu_dropout,
         output_activation=activation,
@@ -1472,11 +1566,12 @@ def _ffn_layer_multi_inputs(inputs_list,
   if postprocess:
     if num_inputs == 1:
       output = common_layers.layer_postprocess(original_inputs, output, hparams)
-    else:  # only dropout (no residual)x
+
+    else:  # only dropout (no residual)
       hp = copy.copy(hparams)
       hp.layer_postprocess_sequence = hp.layer_postprocess_sequence.replace(
           "a", "")
-      output = common_layers.layer_postprocess(original_inputs, output, hp)
+      output = common_layers.layer_postprocess(None, output, hp)
 
   return output
 
@@ -1649,43 +1744,52 @@ def add_step_timing_signal(x, step, hparams):
 
 
 
-def sample_gumbel(shape, eps=1e-20):
-  """Sample from Gumbel(0, 1)"""
-  U = tf.random_uniform(shape,minval=0,maxval=1)
-  return -tf.log(-tf.log(U + eps) + eps)
-
-def gumbel_softmax_sample(logits, temperature):
-  """ Draw a sample from the Gumbel-Softmax distribution"""
-  y = logits + sample_gumbel(tf.shape(logits))
-  return tf.nn.softmax( y / temperature)
-
-
-straight_through=False # if True, use Straight-through Gumbel-Softmax
-tau0 = 5.0
-learn_temp = True # if learn the softmax temperature
-
-def gumbel_softmax(logits, temperature, straight_through=False):
+def gumbel_softmax(logits,
+                   gumbel_noise_factor=0.8,
+                   temperature=0.5,
+                   temperature_warmup_steps=150000,
+                   learn_temp= False,
+                   straight_through=False,
+                   name = None):
   """Sample from the Gumbel-Softmax distribution and optionally discretize.
   Args:
-    logits: [batch_size, n_class] unnormalized log-probs
-    temperature: non-negative scalar
-    hard: if True, take argmax, but differentiate w.r.t. soft sample y
+    logits: [batch_size, (length, width), n_class] unnormalized log-probs
+    temperature: softmax temperature non-negative scalar
+    temperature_warmup_steps: Number of steps it takes to decay temperature to
+      0.
+    straight_through: if True, take argmax, but differentiate wrt soft sample y
   Returns:
-    [batch_size, n_class] sample from the Gumbel-Softmax distribution.
-    If hard=True, then the returned sample will be one-hot, otherwise it will
-    be a probabilitiy distribution that sums to 1 across classes
+    [batch_size, (length, width) , n_class] sample from the Gumbel-Softmax distribution.
+    If straight_through=True, then the returned sample will be one-hot,
+    otherwise it will be a probability distribution over classes
   """
-  y = gumbel_softmax_sample(logits, temperature)
-  if straight_through:
-    k = tf.shape(logits)[-1]
-    #y_hard = tf.cast(tf.one_hot(tf.argmax(y,1),k), y.dtype)
-    y_hard = tf.cast(tf.equal(y,tf.reduce_max(y,1,keep_dims=True)),y.dtype)
-    y = tf.stop_gradient(y_hard - y) + y
+
+  with tf.variable_scope(name, default_name="gumbel_softmax"):
+    logsm = tf.nn.log_softmax(logits)
+
+    # Gumbel-softmax sample
+    gumbel_samples = discretization.gumbel_sample(
+      common_layers.shape_list(logsm))* gumbel_noise_factor
+
+    # temperature
+    if not learn_temp:
+      steps = temperature_warmup_steps
+      gumbel_samples *= common_layers.inverse_exp_decay(steps // 5) * 0.5
+      temperature = 1.2 - common_layers.inverse_lin_decay(steps)
+      # 10% of the time keep reasonably high temperature to keep learning.
+      temperature = tf.cond(
+        tf.less(tf.random_uniform([]), 0.9), lambda: temperature,
+        lambda: tf.random_uniform([], minval=0.5, maxval=1.0))
+
+    tau = tf.Variable(temperature, name="temperature", trainable=learn_temp)
+
+    y = tf.nn.softmax((logsm + gumbel_samples) / tau)
+
+    tf.summary.histogram("max-log-gumbel-softmax", tf.reshape(
+      -tf.reduce_max(logsm, axis=-1), [-1]))
+
+    if straight_through:
+      # Calculate the argmax and construct hot vectors.
+      y_hard = tf.cast(tf.equal(y,tf.reduce_max(y,1,keep_dims=True)),y.dtype)
+      y = tf.stop_gradient(y_hard - y) + y
   return y
-
-
-
-# temperature
-tau = tf.Variable(tau0,name="temperature",trainable=learn_temp)
-# sample. (set hard=True for ST Gumbel-Softmax)
-y = gumbel_softmax(logits_y,tau,hard=False)
