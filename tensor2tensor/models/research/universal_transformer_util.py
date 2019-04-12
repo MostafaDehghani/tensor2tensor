@@ -321,6 +321,14 @@ def universal_transformer_layer_stacked(x,
   """
 
   def aggrigate_uts_extra_outputs(extra_outputs):
+    """Extra outputs are things like act loss (ponder time).
+
+    Args:
+     extra_outputs: so far it is just act ponder time.
+
+    Returns:
+       sum of the extra losses.
+    """
     return sum(extra_outputs)
 
   with tf.variable_scope("stacked_universal_transformer"):
@@ -329,6 +337,7 @@ def universal_transformer_layer_stacked(x,
     tf.logging.info("Using a stacked of  %d universal transformer layers"
                     %hparams.num_stacked_universal_transformers)
 
+    # Add layers of universal transformer
     for layer_cnt in range(hparams.num_stacked_universal_transformers):
       # TODO(dehghani) remove this:
       print("we are in the %d loop" %layer_cnt)
@@ -364,13 +373,18 @@ def get_stacked_ut_layer(x,
   """
 
   if hparams.function_adaptation is None:
+    # If we have no adaptation (the number of ut layers is fixed, we just apply a normal ut layer)
     x, extra_output = universal_transformer_layer_single(
       x, hparams, ffn_unit, attention_unit, pad_remover)
 
   elif hparams.function_adaptation == "highway":
+    # If the function adaptation mode is highway if means we will mix the output of each ut layer with its input
+    # to give the model the ability to use all the ut layers (the different functions) to produce the output.
+    # In this mode, the adaptation is done per position.
     original_x = x
     gate_inputs = [x]
 
+    # First, we apply a standard ut layer.
     x, extra_output = universal_transformer_layer_single(
       x, hparams, ffn_unit, attention_unit, pad_remover)
 
@@ -384,10 +398,12 @@ def get_stacked_ut_layer(x,
       pad_remover=pad_remover,
       preprocess=True)
 
+
+    # carry_gate and transforme gate can be complementary, or computed independently ...
     if hparams.couple_carry_transform_gates:
       carry_gate = tf.subtract(1.0, transform_gate, name="carry")
-
     else:
+      # TODO(dehghani): why does it make sense to compute this independently?
       carry_gate = _ffn_layer_multi_inputs(
         gate_inputs,
         hparams,
@@ -398,6 +414,7 @@ def get_stacked_ut_layer(x,
         pad_remover=pad_remover,
         preprocess=True)
 
+    # The output for each position is a mixture of input to ut the layer and the output of the ut layer.
     x = original_x * carry_gate + x * transform_gate
 
     tf.contrib.summary.histogram("sut_highway_mean_transform_gate_layer",
@@ -413,6 +430,8 @@ def get_stacked_ut_layer(x,
                                  carry_gate)
 
   elif hparams.function_adaptation == "binary":
+    # In this mode, we either apply a ut layer or completely skip it.
+
     original_x = x
     gate_inputs = [x]
 
@@ -1408,8 +1427,10 @@ def _binary_gate_with_gumbel_softmax(inputs_list,
   """
 
   if not per_position:
+    # TODO(dehghani): what is the inputs list? what is each item in the list?
     for i, inputs_pos in enumerate(inputs_list):
       # average over all positions
+      # (batch_size, sequence_length, embedding_dim) -> (batch_size, embedding_dim)
       inputs = tf.reduce_mean(inputs_pos, axis=1)
       # inputs = tf.squeeze(inputs)
       inputs_list[i] = inputs
@@ -1419,7 +1440,7 @@ def _binary_gate_with_gumbel_softmax(inputs_list,
 
   logits = _ffn_layer_multi_inputs(inputs_list,
                                    hparams,
-                                   output_size=2, #binary
+                                   output_size=2, #binary # TODO(dehghani): can't we do this with 1 dimension?
                                    ffn_layer_type="dense",
                                    name=name,
                                    activation=None,
