@@ -809,6 +809,18 @@ def universal_transformer_sepconv_base():
   return hparams
 
 
+@registry.register_hparams
+def universal_transformer_with_computation_adaptation_binary_base():
+  hparams = universal_transformer_base()
+  hparams.recurrence_type = "computation_adaptation"
+  return hparams
+
+@registry.register_hparams
+def universal_transformer_with_computation_adaptation_softbinary_base():
+  hparams = universal_transformer_base()
+  hparams.recurrence_type = "computation_adaptation"
+  hparams.straight_through = False
+  return hparams
 
 @registry.register_hparams
 def stacked_universal_transformer_base():
@@ -817,7 +829,6 @@ def stacked_universal_transformer_base():
   hparams.num_stacked_universal_transformers = 6
   hparams.num_rec_steps = 4
   return hparams
-
 
 @registry.register_hparams
 def stacked_universal_transformer_with_function_adaptation_highway_base():
@@ -845,6 +856,23 @@ def stacked_universal_transformer_with_function_adaptation_softbinary_learnedtem
   hparams.straight_through = False
   hparams.learn_softmax_temp = True
   return hparams
+
+
+@registry.register_hparams
+def stacked_universal_transformer_with_computation_and_function_adaptation_binary_base():
+  hparams = stacked_universal_transformer_base()
+  hparams.function_adaptation = "binary"
+  hparams.recurrence_type = "computation_adaptation"
+  return hparams
+
+@registry.register_hparams
+def stacked_universal_transformer_with_computation_and_function_adaptation_softbinary_base():
+  hparams = stacked_universal_transformer_base()
+  hparams.function_adaptation = "binary"
+  hparams.recurrence_type = "computation_adaptation"
+  hparams.straight_through = False
+  return hparams
+
 
 @registry.register_hparams
 def stacked_universal_transformer_tiny():
