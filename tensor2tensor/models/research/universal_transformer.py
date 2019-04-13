@@ -96,7 +96,8 @@ class UniversalTransformer(transformer.Transformer):
              cache=None,
              decode_loop_step=None,
              nonpadding=None,
-             losses=None):
+             losses=None,
+             ** kwargs):
     """Decode Universal Transformer outputs from encoder representation.
 
     It is similar to "transformer.decode", but it uses
@@ -215,7 +216,7 @@ class UniversalTransformer(transformer.Transformer):
           hparams.act_loss_weight *
           tf.reduce_mean(dec_ponder_times + dec_remainders))
       act_loss = enc_act_loss + dec_act_loss
-      tf.contrib.summary.scalar("act_loss", act_loss)
+      tf.contrib.summary.histogram("act_loss", act_loss)
       return decoder_output, {"act_loss": act_loss}
 
     return decoder_output
@@ -343,7 +344,7 @@ class UniversalTransformerEncoder(transformer.Transformer):
       ponder_times, remainders = enc_extra_output
       act_loss = hparams.act_loss_weight * tf.reduce_mean(ponder_times +
                                                           remainders)
-      tf.contrib.summary.scalar("act_loss", act_loss)
+      tf.contrib.summary.histogram("act_loss", act_loss)
 
       return encoder_output, {"act_loss": act_loss}
     return encoder_output
@@ -372,7 +373,7 @@ def update_hparams_for_universal_transformer(hparams):
   hparams.add_hparam("num_inrecurrence_layers", 1)
 
   # Type of recurrency:
-  # basic, highway, skip, dwa, act, rnn, gru, lstm.
+  # basic, highway, skip, dwa, act, rnn, gru, lstm, and computation_adaptation
   hparams.add_hparam("recurrence_type", "basic")
 
   # Number of steps (which is equivalent to num layer in transformer).
@@ -407,6 +408,10 @@ def update_hparams_for_universal_transformer(hparams):
   hparams.add_hparam("transform_bias_init", -1.0)
   hparams.add_hparam("couple_carry_transform_gates", True)
 
+  # For UT with highway and skip. the value can be any combination of
+  # "i": input, "s":state, and "t":transformed_state
+  hparams.add_hparam("gates_inputs","i")
+
   # Depth-wise attention (grid-transformer!) hparams:
   # Adds depth embedding, if true.
   hparams.add_hparam("depth_embedding", True)
@@ -440,9 +445,11 @@ def update_hparams_for_universal_transformer(hparams):
   # None (no adaptation), highway (highway gate around UTs),
   # binary (binary gate around ut)
   hparams.add_hparam("function_adaptation", None)
-
   # apply function adaption per position
   hparams.add_hparam("per_position_function_adaptation", False)
+
+  # apply computation adaption per position
+  hparams.add_hparam("per_position_computation_adaptation", False)
 
   # hparams of the binary gate with gumbel softmax
   hparams.add_hparam("gumbel_noise_factor", 0.9)
