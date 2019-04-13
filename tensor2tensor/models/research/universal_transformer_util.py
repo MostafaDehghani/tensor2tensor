@@ -1529,7 +1529,7 @@ def _binary_gate_with_gumbel_softmax(inputs_list,
                          temperature_warmup_steps=temperature_warmup_steps,
                          learn_temp= learn_softmax_temp,
                          straight_through=straight_through,
-                         name = "gumbel_softmax_" + "name")
+                         name = "gumbel_softmax_" + name)
 
   if not per_position:
     # extend the globally made decision to all the positions
@@ -1853,17 +1853,20 @@ def gumbel_softmax(logits,
       common_layers.shape_list(logsm))* gumbel_noise_factor
 
     # temperature
-    if not learn_temp:
+    if learn_temp:
+      tau = tf.Variable(temperature, name="temperature", trainable=learn_temp)
+
+    else:
       steps = temperature_warmup_steps
       gumbel_samples *= common_layers.inverse_exp_decay(steps // 5) * 0.5
       temperature = 1.2 - common_layers.inverse_lin_decay(steps)
       # 10% of the time keep reasonably high temperature to keep learning.
-      temperature = tf.cond(
+      tau = tf.cond(
         tf.less(tf.random_uniform([]), 0.9), lambda: temperature,
         lambda: tf.random_uniform([], minval=0.5, maxval=1.0))
 
-    tau = tf.Variable(temperature, name="temperature", trainable=learn_temp)
-    tf.summary.histogram("softmax tempreture", tau)
+
+    tf.contrib.summary.histogram("softmax tempreture", tau)
 
     y = tf.nn.softmax((logsm + gumbel_samples) / tau)
 
