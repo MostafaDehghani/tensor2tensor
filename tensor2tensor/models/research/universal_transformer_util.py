@@ -948,10 +948,10 @@ def universal_transformer_with_computation_adaptation(layer_inputs,
 
 
   # If we use hard binary in the forward pass (i.e. straight_through = True)
-  # we also apply halting mask in the forward pass
+  # we also apply halting mask in the forward pass, i.e. we don't transform
+  # inputs that already halted.
   if hparams.straight_through:
     halting_mask = halt_prob = halting_mask * halt_prob
-
 
   new_state = (state *  halt_prob + transformed_state * transform_prob)
 

@@ -813,6 +813,7 @@ def universal_transformer_sepconv_base():
 def universal_transformer_with_computation_adaptation_binary_base():
   hparams = universal_transformer_base()
   hparams.recurrence_type = "computation_adaptation"
+  assert hparams.learn_softmax_temp == False # problem with while_loop
   return hparams
 
 @registry.register_hparams
@@ -820,6 +821,7 @@ def universal_transformer_with_computation_adaptation_softbinary_base():
   hparams = universal_transformer_base()
   hparams.recurrence_type = "computation_adaptation"
   hparams.straight_through = False
+  assert hparams.learn_softmax_temp == False # problem with while_loop
   return hparams
 
 @registry.register_hparams
@@ -857,13 +859,23 @@ def stacked_universal_transformer_with_function_adaptation_softbinary_learnedtem
   hparams.learn_softmax_temp = True
   return hparams
 
+@registry.register_hparams
+def stacked_universal_transformer_with_function_adaptation_softbinary_tall():
+  hparams = stacked_universal_transformer_base()
+  hparams.function_adaptation = "binary"
+  hparams.straight_through = False
+  hparams.num_rec_steps = 8
+  return hparams
+
 
 @registry.register_hparams
 def stacked_universal_transformer_with_computation_and_function_adaptation_binary_base():
   hparams = stacked_universal_transformer_base()
   hparams.function_adaptation = "binary"
   hparams.recurrence_type = "computation_adaptation"
+  assert hparams.learn_softmax_temp == False # problem with while_loop
   return hparams
+
 
 @registry.register_hparams
 def stacked_universal_transformer_with_computation_and_function_adaptation_softbinary_base():
@@ -871,6 +883,19 @@ def stacked_universal_transformer_with_computation_and_function_adaptation_softb
   hparams.function_adaptation = "binary"
   hparams.recurrence_type = "computation_adaptation"
   hparams.straight_through = False
+  assert hparams.learn_softmax_temp == False # problem with while_loop
+  return hparams
+
+
+
+@registry.register_hparams
+def stacked_universal_transformer_with_computation_and_function_adaptation_softbinary_tall():
+  hparams = stacked_universal_transformer_base()
+  hparams.function_adaptation = "binary"
+  hparams.recurrence_type = "computation_adaptation"
+  hparams.straight_through = False
+  assert hparams.learn_softmax_temp == False # problem with while_loop
+  hparams.num_rec_steps = 8
   return hparams
 
 
