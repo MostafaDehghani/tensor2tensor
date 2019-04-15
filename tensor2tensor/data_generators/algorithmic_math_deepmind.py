@@ -32,8 +32,7 @@ from tensor2tensor.utils import registry
 
 import tensorflow as tf
 
-
-_URL = "https://storage.googleapis.com/mathematics-dataset/v1.0.tar.gz"
+_URL = "https://storage.googleapis.com/mathematics-dataset/mathematics_dataset-v1.0.tar.gz"
 
 
 @registry.register_problem
@@ -58,6 +57,14 @@ class AlgorithmicMathDeepmindAll(text_problems.Text2TextProblem):
   def is_generate_per_split(self):
     return True
 
+  @property
+  def train_dirs(self):
+    return ["v1.0/train-easy", "v1.0/train-medium", "v1.0/train-hard"]
+
+  @property
+  def eval_dirs(self):
+    return ["v1.0/interpolate", "v1.0/extrapolate"]
+
   def generate_samples(self, data_dir, tmp_dir, dataset_split):
     """Downloads and extracts the dataset and generates examples.
 
@@ -81,11 +88,9 @@ class AlgorithmicMathDeepmindAll(text_problems.Text2TextProblem):
     tarfile.open(path, "r:gz").extractall(tmp_dir)
 
     # Create the list of directories with data files.
-    train_dirs = ["v1.0/train-easy", "v1.0/train-medium", "v1.0/train-hard"]
-    eval_dirs = ["v1.0/interpolate", "v1.0/extrapolate"]
-    dirs = eval_dirs
+    dirs = self.eval_dirs
     if dataset_split == problem.DatasetSplit.TRAIN:
-      dirs = train_dirs
+      dirs = self.train_dirs
     dirs = [os.path.join(tmp_dir, d) for d in dirs]
 
     # Iterate over directories and files generating examples.
@@ -95,10 +100,28 @@ class AlgorithmicMathDeepmindAll(text_problems.Text2TextProblem):
         # In each text file, the first line is the input, the next the answer,
         # and so on until the end of the file.
         cur_input = None
-        with tf.gfile.Open(fname, "rb") as f:
+        with tf.gfile.Open(fname, "r") as f:
           for line in f:
             if cur_input is None:
               cur_input = line.strip()
             else:
               yield {"inputs": cur_input, "targets": line.strip()}
               cur_input = None
+
+
+@registry.register_problem
+class AlgorithmicMathDeepmindInterpolation(AlgorithmicMathDeepmindAll):
+  """DeepMind Mathematics Problem, v1.0, interpolation test data."""
+
+  @property
+  def eval_dir(self):
+    return ["v1.0/interpolate"]
+
+
+@registry.register_problem
+class AlgorithmicMathDeepmindExtrapolation(AlgorithmicMathDeepmindAll):
+  """DeepMind Mathematics Problem, v1.0, extrapolation test data."""
+
+  @property
+  def eval_dir(self):
+    return ["v1.0/extrapolate"]
