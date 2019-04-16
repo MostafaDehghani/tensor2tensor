@@ -929,6 +929,11 @@ def universal_transformer_with_computation_adaptation(layer_inputs,
   if "i" in hparams.gates_inputs:
     gate_inputs.append(inputs)
 
+  if hparams.learn_softmax_temp:
+    tf.logging.warn("Learning softmax tempreture doesn't work with "
+                    "the while_loop for now.")
+    hparams.learn_softmax_temp = False
+
   skip_or_go_through_gate = _binary_gate_with_gumbel_softmax(
     gate_inputs,
     hparams,
@@ -1864,7 +1869,6 @@ def gumbel_softmax(logits,
       tau = tf.cond(
         tf.less(tf.random_uniform([]), 0.9), lambda: temperature,
         lambda: tf.random_uniform([], minval=0.5, maxval=1.0))
-
 
     tf.contrib.summary.histogram("softmax tempreture", tau)
 
