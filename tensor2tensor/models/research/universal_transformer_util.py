@@ -334,8 +334,9 @@ def universal_transformer_layer_stacked(x,
   with tf.variable_scope("stacked_universal_transformer"):
 
     extra_outputs = []
-    tf.logging.info("Using a stacked of  %d universal transformer layers"
+    tf.logging.info("Using a stacked of %d universal transformer layers"
                     %hparams.num_stacked_universal_transformers)
+    tf.logging.info("the num_rec_steps is: %d" % hparams.num_rec_steps)
 
     # Add layers of universal transformer
     for layer_cnt in range(hparams.num_stacked_universal_transformers):
@@ -1870,7 +1871,7 @@ def gumbel_softmax(logits,
         tf.less(tf.random_uniform([]), 0.9), lambda: temperature,
         lambda: tf.random_uniform([], minval=0.5, maxval=1.0))
 
-    tf.contrib.summary.histogram("softmax tempreture", tau)
+    tf.contrib.summary.histogram("softmax temperature", tau)
 
     y = tf.nn.softmax((logsm + gumbel_samples) / tau)
 
